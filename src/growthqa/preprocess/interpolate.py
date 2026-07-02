@@ -1,0 +1,128 @@
+from __future__ import annotations
+
+from typing import List
+
+import numpy as np
+import pandas as pd
+
+from growthqa.io.wide_loader import REQUIRED_META_COLS
+from growthqa.preprocess.timegrid import (
+    build_common_grid,
+    get_time_columns,
+    make_header_from_times,
+    parse_time_from_header,
+)
+
+
+def _get_meta_cols(df_wide: pd.DataFrame) -> List[str]:
+    cols = list(REQUIRED_META_COLS)
+    if "Concentration" in df_wide.columns:
+        cols.insert(3, "Concentration")
+    for c in [
+        "base_curve_id",
+        "aug_id",
+        "train_horizon",
+        "tmax_original",
+        "is_censored",
+        "source_type",
+        "is_synthetic",
+    ]:
+        if c in df_wide.columns and c not in cols:
+            cols.append(c)
+    return cols
+
+
+def wide_to_long(df_wide: pd.DataFrame) -> pd.DataFrame:
+    tcols = get_time_columns(df_wide)
+    meta_cols = _get_meta_cols(df_wide)
+    long = df_wide.melt(
+        id_vars=meta_cols,
+        value_vars=tcols,
+        var_name="time_col",
+        value_name="OD",
+    )
+    long["time_h"] = long["time_col"].map(lambda c: parse_time_from_header(str(c)))
+    long["OD"] = pd.to_numeric(long["OD"], errors="coerce")
+    long["time_h"] = pd.to_numeric(long["time_h"], errors="coerce")
+    long = long.drop(columns=["time_col"])
+    long = long.dropna(subset=["time_h"])
+    return long
+
+
+def interpolate_linear_no_extrap(t_src: np.ndarray, y_src: np.ndarray, t_grid: np.ndarray) -> np.ndarray:
+    t_src = np.array(t_src, dtype=float)
+    y_src = np.array(y_src, dtype=float)
+
+    m = np.isfinite(t_src) & np.isfinite(y_src)
+    t = t_src[m]
+    y = y_src[m]
+    if t.size < 2:
+        return np.full_like(t_grid, np.nan, dtype=float)
+
+    order = np.argsort(t)
+    t = t[order]
+    y = y[order]
+
+    # de-duplicate times (mean duplicates)
+    uniq_t, inv = np.unique(t, return_inverse=True)
+    if uniq_t.size != t.size:
+        y_acc = np.zeros_like(uniq_t, dtype=float)
+        cnt = np.zeros_like(uniq_t, dtype=float)
+        for i, u in enumerate(inv):
+            y_acc[u] += y[i]
+            cnt[u] += 1
+        y = y_acc / np.maximum(cnt, 1.0)
+        t = uniq_t
+
+    if t.size < 2:
+        return np.full_like(t_grid, np.nan, dtype=float)
+
+    out = np.full_like(t_grid, np.nan, dtype=float)
+    lo, hi = float(t[0]), float(t[-1])
+    inside = (t_grid >= lo) & (t_grid <= hi)
+    if np.any(inside):
+        out[inside] = np.interp(t_grid[inside], t, y)
+    return out
+
+
+def build_raw_merged(df_all_wide: pd.DataFrame,
+                     step_hours: float,
+                     min_points: int,
+                     tmax_hours: float,
+                     low_res_threshold: int) -> pd.DataFrame:
+    """Interpolate every original curve onto the canonical 0..tmax grid."""
+    long = wide_to_long(df_all_wide)
+
+    t_grid = build_common_grid(step_hours=step_hours, tmax_hours=tmax_hours)
+    time_headers = make_header_from_times(t_grid)
+
+    rows = []
+    meta_cols = _get_meta_cols(df_all_wide)
+    grouped = long.groupby(meta_cols, sort=True, dropna=False)
+
+    for keys, grp in grouped:
+        if not isinstance(keys, tuple):
+            keys = (keys,)
+        meta = dict(zip(meta_cols, keys))
+        t_src = grp["time_h"].to_numpy(dtype=float)
+        y_src = grp["OD"].to_numpy(dtype=float)
+
+        finite = np.isfinite(t_src) & np.isfinite(y_src)
+        n_fin = int(np.sum(finite))
+
+        too_sparse = n_fin < int(min_points)
+        low_resolution = (n_fin >= int(min_points)) and (n_fin < int(low_res_threshold))
+
+        y_grid = (
+            interpolate_linear_no_extrap(t_src, y_src, t_grid)
+            if not too_sparse else np.full_like(t_grid, np.nan, dtype=float)
+        )
+
+        row = {**meta, "too_sparse": bool(too_sparse), "low_resolution": bool(low_resolution)}
+        for h, v in zip(time_headers, y_grid):
+            row[h] = float(v) if np.isfinite(v) else np.nan
+
+        rows.append(row)
+
+    cols = meta_cols + ["too_sparse", "low_resolution"] + time_headers
+    return pd.DataFrame(rows)[cols]

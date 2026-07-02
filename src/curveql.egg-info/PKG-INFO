@@ -1,0 +1,19 @@
+Metadata-Version: 2.4
+Name: curveql
+Version: 0.1.0
+Summary: GrowthQC: preprocessing, metadata extraction and classification of bacterial growth curves
+Author: Prerna Thapliyal
+Requires-Python: <3.13,>=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: numpy
+Requires-Dist: pandas
+Requires-Dist: scipy
+Requires-Dist: statsmodels
+Requires-Dist: scikit-learn
+Requires-Dist: joblib
+Requires-Dist: openpyxl
+Requires-Dist: matplotlib
+Requires-Dist: plotly
+Requires-Dist: streamlit<2,>=1.40.0
+
+# curveql
