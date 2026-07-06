@@ -34,6 +34,22 @@ from growthqa.stage2.late_window import (
 
 
 # ============================================================
+# Compatibility helpers
+# ============================================================
+def _temp_dir_context():
+    """Context manager for TemporaryDirectory that works across Python versions.
+    
+    The ignore_cleanup_errors parameter was only added in Python 3.10.
+    This wrapper detects the Python version and uses it if available, otherwise
+    falls back to the standard TemporaryDirectory.
+    """
+    if sys.version_info >= (3, 10):
+        return tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+    else:
+        return tempfile.TemporaryDirectory()
+
+
+# ============================================================
 # Model loading utilities
 # ============================================================
 def assert_runtime_matches_model(model_path: str) -> None:
@@ -452,7 +468,7 @@ def run_label_inference_from_uploaded_wide(
     early_cols = [c for c in time_cols_all if float(parse_time_from_header(str(c))) <= float(stage2_start)]
     wide_early_raw_df = wide_raw_df[non_time_cols + early_cols].copy()
 
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+    with _temp_dir_context() as td:
         tmp_wide_csv = Path(td) / "wide_input.csv"
         wide_early_raw_df.drop(columns=["curve_key"], errors="ignore").to_csv(tmp_wide_csv, index=False)
 
