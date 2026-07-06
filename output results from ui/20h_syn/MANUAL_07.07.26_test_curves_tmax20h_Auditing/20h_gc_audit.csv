@@ -1,0 +1,6 @@
+test.id,add.id,concentration,aic.logistic,aic.gompertz,aic.richards,aic.modified_gompertz,aic.model,bic.model,aic.second,delta.aic.second,smooth.used,df.effective,lag.method.spline,lag.method.model,y0.baseline.spline,x_transform,y_transform,pipeline_version,schema_version
+test_curves_tmax20h,test_curves_tmax20h_L01,0.0,,,,,-377.2917844017261,-370.4374961349089,-375.3261610137747,1.965623387951382,0.6253695714985952,4.000000006941724,tangent_spline,analytical,0.0767715650534534,none,none,1.1.0,1.1.0
+test_curves_tmax20h,test_curves_tmax20h_L02,0.0,,,,,-354.18999055163664,-347.33570228481943,-352.20154254781164,1.988448003824999,0.6320054550888017,4.0000000058020735,tangent_spline,analytical,0.05932078152865233,none,none,1.1.0,1.1.0
+test_curves_tmax20h,test_curves_tmax20h_L06,0.0,,,,,-359.42187841845083,-352.5675901516336,-357.43001909384617,1.9918593246046612,0.6863047879887745,3.999999991973892,tangent_spline,analytical,0.05866674960614116,none,none,1.1.0,1.1.0
+test_curves_tmax20h,test_curves_tmax20h_L07,0.0,,,,,,,,,0.6420490391319618,4.000000005542882,tangent_spline,,0.04866232203313453,none,none,1.1.0,1.1.0
+test_curves_tmax20h,test_curves_tmax20h_L08,0.0,,,,,-344.90843241562965,-338.05414414881244,-344.90843241562965,0.0,0.7422238901490346,4.0000000086464835,tangent_spline,analytical,0.08289109026090787,none,none,1.1.0,1.1.0

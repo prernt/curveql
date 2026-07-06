@@ -1,0 +1,76 @@
+{
+  "run": {
+    "mode": "MANUAL",
+    "timestamp": "2026-07-07T00:11:44.676797",
+    "file_stem": "test_curves_tmax20h",
+    "predicting_model": "Average"
+  },
+  "preprocessing": {
+    "input_is_raw": false,
+    "global_blank": null,
+    "step": 0.5,
+    "min_points": 3,
+    "low_res_threshold": 7,
+    "auto_tmax": false,
+    "auto_tmax_coverage": 0.8,
+    "tmax_hours": 16.0,
+    "clip_negatives": false,
+    "smooth_method": "SGF",
+    "smooth_window": 5,
+    "normalize": "MINMAX"
+  },
+  "stage2_thresholds": {
+    "stage2_start": 16.0,
+    "min_late_points": 5,
+    "quality_threshold": 0.3,
+    "growth_z_threshold": 2.0,
+    "artifact_score_threshold": 0.7,
+    "decline_score_threshold": 0.7,
+    "artifact_cv_low": 0.05,
+    "artifact_cv_high": 0.2,
+    "artifact_osc_noise_mult": 2.0,
+    "artifact_evap_slope": -0.005,
+    "min_noise_level": 0.005,
+    "eps_dt": 1e-09
+  },
+  "grofit_config": {
+    "response_var": "mu",
+    "have_atleast": 6,
+    "fit_opt": "b",
+    "gc_boot_B": 100,
+    "dr_boot_B": 100,
+    "spline_auto_cv": true,
+    "spline_s": null,
+    "dr_s": null,
+    "smooth_gc": null,
+    "smooth_dr": null,
+    "dr_x_transform": null,
+    "dr_y_transform": null,
+    "bootstrap_method": "pairs"
+  },
+  "user_selections": {
+    "gc_bootstrap": "True",
+    "preferred_fit": "Best Model",
+    "response_metric": "mu",
+    "dr_bootstrap": "True",
+    "export_label_filter": "Valid",
+    "export_dr_include_unsure": false,
+    "export_dr_include_invalid": false
+  },
+  "stage1_feature_list": [
+    "observed_tmax",
+    "net_change_per_hour",
+    "max_slope",
+    "lag_time_est",
+    "monotonicity_fraction",
+    "largest_drop_frac",
+    "roughness",
+    "final_to_peak_ratio"
+  ],
+  "environment": {
+    "python": "3.11.0 (main, Oct 24 2022, 18:26:48) [MSC v.1933 64 bit (AMD64)]",
+    "numpy": "1.23.5",
+    "pandas": "1.5.2",
+    "sklearn": "1.2.0"
+  }
+}

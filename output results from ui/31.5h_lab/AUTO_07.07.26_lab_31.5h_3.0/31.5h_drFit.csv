@@ -1,0 +1,2 @@
+name,log.x,log.y,Samples,n.conc,EC50,meanEC50,sdEC50,yEC50,EC50.orig,yEC50.orig,EC50.low,EC50.high,EC50.orig.low,EC50.orig.high,fit.status,fail.reason,dr.method
+lab_31.5h_3.0,0,0,0,1,,,,,,,,,,,failed,too_few_conc_points_1,mu-none
