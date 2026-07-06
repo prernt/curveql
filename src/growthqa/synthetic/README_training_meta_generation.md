@@ -102,10 +102,7 @@ This writes `data/train_data/timeseries_wide_SD1.csv` (900 curves; 503 valid,
 ### 2. Build the training dataset
 
 ```bash
-python -m growthqa.cli.main build-train-meta \
-    --synthetic data/gr_data/timeseries_wide_SD1.csv \
-    --lab       data/train_data/lab_14.75h_0.25.csv \
-    --out-dir   data/gr_data
+python -m growthqa.cli.main build-train-meta --synthetic data/pipeline_data/timeseries_wide_SD1.csv --lab data/pipeline_data/lab_14.75h_0.25.csv --out-dir data/train_data
 ```
 This writes three files into `data/gr_data/`:
 
