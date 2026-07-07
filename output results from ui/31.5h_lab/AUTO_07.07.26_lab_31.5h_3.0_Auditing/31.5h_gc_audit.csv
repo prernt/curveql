@@ -1,2 +1,0 @@
-test.id,add.id,concentration,aic.logistic,aic.gompertz,aic.richards,aic.modified_gompertz,aic.model,bic.model,aic.second,delta.aic.second,smooth.used,df.effective,lag.method.spline,lag.method.model,y0.baseline.spline,x_transform,y_transform,pipeline_version,schema_version
-lab_31.5h_3.0,lab_31.5h_3.0_BY4741_A2,0.0,,,,,-15.999897930248814,-15.602690221849635,-15.765003366507297,0.2348945637415163,0.0,3.519569828442948,tangent_spline,analytical,0.5420999999999655,none,none,1.1.0,1.1.0

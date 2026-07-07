@@ -1,2 +1,0 @@
-name,log.x,log.y,Samples,n.conc,EC50,meanEC50,sdEC50,yEC50,EC50.orig,yEC50.orig,EC50.low,EC50.high,EC50.orig.low,EC50.orig.high,fit.status,fail.reason,dr.method
-lab_16h_0.25_Sparse_Extr,0,0,0,5,,,,,,,,,,,failed,too_few_conc_points_5,mu-none

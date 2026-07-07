@@ -1,7 +1,0 @@
-test.id,add.id,concentration,aic.logistic,aic.gompertz,aic.richards,aic.modified_gompertz,aic.model,bic.model,aic.second,delta.aic.second,smooth.used,df.effective,lag.method.spline,lag.method.model,y0.baseline.spline,x_transform,y_transform,pipeline_version,schema_version
-lab_16h_0.25_Sparse,lab_16h_0.25_Sparse_Test1,0.01,,,,,-265.95986146519965,-260.49067814525375,-347.3955318798779,-81.43567041467827,,5.176949411660871,tangent_spline,analytical,0.016711944508458174,none,none,1.1.0,1.1.0
-lab_16h_0.25_Sparse,lab_16h_0.25_Sparse_Test2,0.03,,,,,-658.5667017247022,-648.7152421569416,-521.2112067658951,137.35549495880707,,4.670507065351325,tangent_spline,analytical,0.016949395290679944,none,none,1.1.0,1.1.0
-lab_16h_0.25_Sparse,lab_16h_0.25_Sparse_Test3,1.0,,,,,-385.01364926411316,-379.0276190182472,-423.6413996345477,-38.62775037043457,,8.258442806707176,tangent_spline,analytical,0.017999447391153365,none,none,1.1.0,1.1.0
-lab_16h_0.25_Sparse,lab_16h_0.25_Sparse_Test4,3.0,,,,,,,,,0.552557690651156,4.000000008487849,tangent_spline,,0.01585863362387787,none,none,1.1.0,1.1.0
-lab_16h_0.25_Sparse,lab_16h_0.25_Sparse_Test5,30.0,,,,,,,,,0.6265966506907716,3.999999993730693,tangent_spline,,0.01626463546048795,none,none,1.1.0,1.1.0
-lab_16h_0.25_Sparse,lab_16h_0.25_Sparse_Test6,100.0,,,,,-645.9203569107736,-638.3530757183312,-651.3267703857802,-5.406413475006502,,5.582274198981093,tangent_spline,analytical,0.015168011299163366,none,none,1.1.0,1.1.0
