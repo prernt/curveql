@@ -24,7 +24,7 @@ from typing import Optional
 import numpy as np
 from scipy.interpolate import make_smoothing_spline
 
-from .types import FitResult
+from growthqa.grofit.types import FitResult
 
 # ── Smoothing constants ───────────────────────────────────────────────────────
 SPAR_LAM_LOG_MIN = -6.0
@@ -201,7 +201,7 @@ def gc_fit_spline(
             lag = float(t_star - (y_star - y0_baseline) / mu)
             lag_method_str = "tangent_spline"
 
-        integral = float(np.trapz(y_grid, t_grid))
+        integral = float(np.trapezoid(y_grid, t_grid)) if hasattr(np, "trapezoid") else float(np.trapz(y_grid, t_grid))
         rss      = float(np.sum((y - sp(t)) ** 2))
 
         df_eff   = effective_df(sp, t)

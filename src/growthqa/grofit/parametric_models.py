@@ -20,7 +20,7 @@ from __future__ import annotations
 import numpy as np
 from dataclasses import dataclass
 from typing import Callable, Dict, Tuple, Optional
-from .lowess import lowess_smooth
+from growthqa.grofit.lowess import lowess_smooth
 
 
 # ─────────────────────────────────────────────────────────────
@@ -284,7 +284,7 @@ def extract_grofit_params_from_curve(
     y_star = float(np.interp(t_star, t_grid, y_grid))
     mu     = float(mu_num)
     lag    = _estimate_lag_from_tangent(t_star, y_star, mu, y0_geo)
-    integral = float(np.trapz(y_grid, t_grid))
+    integral = float(np.trapezoid(y_grid, t_grid)) if hasattr(np, "trapezoid") else float(np.trapz(y_grid, t_grid))
     # Use the parameter A directly if available, else fall back to geometric
     A_est = extract_A_from_params(model_name, params) if params is not None else float(np.nanmax(y_grid) - y0_geo)
     return {"mu": mu, "lag": lag, "A": A_est, "integral": integral}

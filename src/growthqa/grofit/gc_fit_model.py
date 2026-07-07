@@ -5,8 +5,8 @@ import numpy as np
 from typing import Dict, Any, Optional, List, Tuple
 from scipy.optimize import curve_fit
 
-from .types import FitResult
-from .parametric_models import (
+from growthqa.grofit.types import FitResult
+from growthqa.grofit.parametric_models import (
     get_model_specs, start_values_lowess, aic_from_rss,
     extract_grofit_params_from_curve, _extract_analytical_mu_lag,
     extract_A_from_params,
@@ -240,7 +240,7 @@ def gc_fit_model(t: np.ndarray, y: np.ndarray) -> FitResult:
             A_out    = extract_A_from_params(name, popt)
             t_grid   = np.linspace(t_min, t_max, 400)
             y_grid   = spec.func(t_grid, *popt)
-            integral = float(np.trapz(y_grid, t_grid))
+            integral = float(np.trapezoid(y_grid, t_grid)) if hasattr(np, "trapezoid") else float(np.trapz(y_grid, t_grid))
             y0_geo   = float(np.nanmean(y_grid[:3]))
             derived  = {
                 "mu":       ana_mu,
