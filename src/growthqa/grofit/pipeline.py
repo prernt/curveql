@@ -5,14 +5,14 @@ import numpy as np
 from typing import Optional, Dict, Any, Literal
 from pathlib import Path
 
-from .gc_fit_model import gc_fit_model
-from .gc_fit_spline import gc_fit_spline
-from .gc_boot_spline import gc_boot_spline, BootstrapMethod
-from .dr_fit_spline import dr_fit_spline
-from .dr_fit_model import dr_fit_model
-from .dr_boot_spline import dr_boot_spline
-from .interactive import apply_user_exclusion, UserFilterFn
-from .export import export_results_zip
+from growthqa.grofit.gc_fit_model import gc_fit_model
+from growthqa.grofit.gc_fit_spline import gc_fit_spline
+from growthqa.grofit.gc_boot_spline import gc_boot_spline, BootstrapMethod
+from growthqa.grofit.dr_fit_spline import dr_fit_spline
+from growthqa.grofit.dr_fit_model import dr_fit_model
+from growthqa.grofit.dr_boot_spline import dr_boot_spline
+from growthqa.grofit.interactive import apply_user_exclusion, UserFilterFn
+from growthqa.grofit.export import export_results_zip
 
 ResponseVar = Literal["A", "mu", "lag", "integral"]
 FitOpt = Literal["m", "s", "b"]
@@ -391,17 +391,17 @@ def run_grofit_pipeline(
             "fail.reason.spline": getattr(sfit, "fail_reason", None)      if sfit else None,
             "fail.reason.model":  getattr(pfit, "fail_reason", None)      if pfit else None,
         })
-
+        _aic_by_model = {row["model"]: row.get("aic", np.nan) for row in ex.get("aic_table", [])}
         # ── GC_AUDIT row ────────────────────────────────────────────────────
         gc_audit_rows.append({
             "test.id":       test_id,
             "add.id":        curve_id,
             "concentration": conc,
             # per-model AICs (all candidates)
-            "aic.logistic":          ex.get("aic_logistic",          np.nan),
-            "aic.gompertz":          ex.get("aic_gompertz",          np.nan),
-            "aic.richards":          ex.get("aic_richards",          np.nan),
-            "aic.modified_gompertz": ex.get("aic_modified_gompertz", np.nan),
+            "aic.logistic": _aic_by_model.get("logistic", np.nan),
+            "aic.gompertz": _aic_by_model.get("gompertz", np.nan),
+            "aic.richards": _aic_by_model.get("richards", np.nan),
+            "aic.modified_gompertz": _aic_by_model.get("modified_gompertz", np.nan),
             # winning-model summary
             "aic.model":         _v(pfit, "aic"),
             "bic.model":         _v(pfit, "bic"),
