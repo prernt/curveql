@@ -384,6 +384,7 @@ def _assign_stage2_checker_outputs(
         s1 = _normalize_label_text(row.get("pred_label", ""))
         s1_conf = pd.to_numeric(pd.Series([row.get("pred_confidence", np.nan)]), errors="coerce").iloc[0]
         s1_conf_valid = pd.to_numeric(pd.Series([row.get("confidence_valid", np.nan)]), errors="coerce").iloc[0]
+        _late_n_raw = pd.to_numeric(pd.Series([row.get("late_n_points", 0)]), errors="coerce").iloc[0]
 
         ev = EvidenceScores(
             growth_z_like=float(pd.to_numeric(pd.Series([row.get("growth_z_like", 0.0)]), errors="coerce").iloc[0]),
@@ -394,7 +395,7 @@ def _assign_stage2_checker_outputs(
             late_slope=float(pd.to_numeric(pd.Series([row.get("late_slope", np.nan)]), errors="coerce").iloc[0]),
             late_delta=float(pd.to_numeric(pd.Series([row.get("late_delta", np.nan)]), errors="coerce").iloc[0]),
             noise_level=float(pd.to_numeric(pd.Series([row.get("noise_level", np.nan)]), errors="coerce").iloc[0]),
-            n_late_points=int(pd.to_numeric(pd.Series([row.get("late_n_points", 0)]), errors="coerce").iloc[0]),
+            n_late_points=int(_late_n_raw) if pd.notna(_late_n_raw) else 0,
             late_span_hours=float(pd.to_numeric(pd.Series([row.get("late_span_hours", np.nan)]), errors="coerce").iloc[0]),
         )
 
@@ -591,6 +592,7 @@ def run_label_inference_from_uploaded_wide(
     too_sparse_mask = pd.to_numeric(out_df.get("too_sparse", False), errors="coerce").fillna(0).astype(int).eq(1)
     if too_sparse_mask.any():
         out_df.loc[too_sparse_mask, "final_label"] = "Unsure"
+        out_df.loc[too_sparse_mask, "Final Label (S1+S2)"] = "Unsure"
         out_df.loc[too_sparse_mask, "Pred Label"] = "Unsure"
         out_df.loc[too_sparse_mask, "pred_label"] = "Unsure"
         out_df.loc[too_sparse_mask, "Label Reason"] = "TOO_SPARSE_OVERRIDE"

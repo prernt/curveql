@@ -84,35 +84,43 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
     od = y_all[finite]
 
     observed_tmax = float(np.nanmax(t)) if t.size else np.nan
-    n_points_observed = int(t.size)
-
+    n_points_observed_grid = int(t.size)
     if t.size >= 2:
         t_sorted = np.sort(t)
         dt = np.diff(t_sorted)
-        max_gap_hours = float(np.nanmax(dt)) if dt.size else np.nan
+        max_gap_hours_grid = float(np.nanmax(dt)) if dt.size else np.nan
         median_dt_hours = float(np.nanmedian(dt)) if dt.size else np.nan
     else:
-        max_gap_hours = np.nan
+        max_gap_hours_grid = np.nan
         median_dt_hours = np.nan
 
     if np.isfinite(observed_tmax):
         in_range = (t_all >= 0) & (t_all <= observed_tmax)
         denom = int(np.sum(in_range))
         numer = int(np.sum(in_range & ~np.isfinite(y_all)))
-        missing_frac_on_grid = float(numer / denom) if denom > 0 else np.nan
+        missing_frac_on_grid_calc = float(numer / denom) if denom > 0 else np.nan
     else:
-        missing_frac_on_grid = np.nan
+        missing_frac_on_grid_calc = np.nan
 
-    low_res_ctx = (
+    _raw_n = row.get("n_points_observed_raw", None)
+    _raw_gap = row.get("max_gap_hours_raw", None)
+    _raw_missing = row.get("missing_frac_on_grid_raw", None)
+
+    n_points_observed = int(_raw_n) if _raw_n is not None and pd.notna(_raw_n) else n_points_observed_grid
+    max_gap_hours = float(_raw_gap) if _raw_gap is not None and pd.notna(_raw_gap) else max_gap_hours_grid
+    missing_frac_on_grid = (
+        float(_raw_missing) if _raw_missing is not None and pd.notna(_raw_missing) else missing_frac_on_grid_calc
+    )
+
+
+    low_res_ctx = bool(row.get("low_resolution", False))
+    sparse_ctx = bool(row.get("too_sparse", False))
+    grid_resolution_mismatch = (
         (np.isfinite(median_dt_hours) and median_dt_hours > 0.5)
-        or (n_points_observed > 0 and n_points_observed < 10)
-        or bool(row.get("low_resolution", False))
-    )
-    sparse_ctx = (
-        (np.isfinite(max_gap_hours) and max_gap_hours > 2.0)
+        or (np.isfinite(max_gap_hours) and max_gap_hours > 2.0)
         or (np.isfinite(missing_frac_on_grid) and missing_frac_on_grid > 0.25)
-        or bool(row.get("too_sparse", False))
     )
+
 
     train_horizon = pd.to_numeric(pd.Series([row.get("train_horizon", np.nan)]), errors="coerce").iloc[0]
     if not np.isfinite(train_horizon):
@@ -133,6 +141,7 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
             "missing_frac_on_grid": missing_frac_on_grid,
             "low_resolution": int(low_res_ctx),
             "too_sparse": int(sparse_ctx),
+            "grid_resolution_mismatch": int(grid_resolution_mismatch),
             "initial_OD": np.nan,
             "final_OD": np.nan,
             "max_OD": np.nan,
@@ -318,6 +327,7 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
         "missing_frac_on_grid": missing_frac_on_grid,
         "low_resolution": int(low_res_ctx),
         "too_sparse": int(sparse_ctx),
+        "grid_resolution_mismatch": int(grid_resolution_mismatch),
         "initial_OD": initial_od,
         "final_OD": final_od,
         "max_OD": max_od,

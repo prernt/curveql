@@ -37,38 +37,65 @@ np.random.seed(RANDOM_STATE)
 
 # Notebook-selected Stage-1 custom feature set from:
 # Stage1_Feature_Exploration_Selection_Training_v2.ipynb (PICK_MODE="CUSTOM")
-NOTEBOOK_STAGE1_CUSTOM_FEATURES = [
-    "observed_tmax",
-    "auc_per_hour",
-    "net_change_per_hour",
-    "max_slope",
-    "lag_time_est",
-    "dip_fraction",
-    "largest_drop_frac",
-    "monotonicity_fraction",
-    "roughness",
-    "final_to_peak_ratio",
-]
+# NOTEBOOK_STAGE1_CUSTOM_FEATURES = [
+#     "observed_tmax",
+#     "auc_per_hour",
+#     "net_change_per_hour",
+#     "max_slope",
+#     "lag_time_est",
+#     "dip_fraction",
+#     "largest_drop_frac",
+#     "monotonicity_fraction",
+#     "roughness",
+#     "final_to_peak_ratio",
+# ]
 
-# Reduced Stage-1 feature set (8 features). Derived from the notebook set by
-# removing the two columns that added the least separable information:
-#   - auc_per_hour: weak univariate signal and overlaps net_change_per_hour.
-#   - dip_fraction: near-duplicate of largest_drop_frac (Spearman ~0.96).
-# The remaining eight cover distinct aspects of curve shape: observation
-# horizon, average growth rate, peak growth rate, lag onset, monotonicity,
-# largest single drop, high-frequency roughness and final-to-peak level.
-# Held-out balanced accuracy and ROC-AUC match the 10-feature set within
-# run-to-run variation.
-STAGE1_SELECTED_FEATURES = [
-    "observed_tmax",
-    "net_change_per_hour",
-    "max_slope",
-    "lag_time_est",
-    "monotonicity_fraction",
-    "largest_drop_frac",
-    "roughness",
-    "final_to_peak_ratio",
-]
+STAGE1_FEATURE_GROUPS = {
+    # "Can we even trust the shape we're about to measure?"
+    "observation_quality": [
+        "observed_tmax",            # how much of the curve was actually observed
+        "n_points_observed",        # raw point count: data density (raw-data-based, not grid-based)
+        "max_gap_hours",            # largest real gap between measurements (raw-data-based)
+        "missing_frac_on_grid",     # measurement density relative to the canonical grid (raw-data-based)
+    ],
+    # "Where did it start and end?"
+    "level": [
+        "initial_OD",               # starting level
+        "final_OD",                 # ending level
+    ],
+    # "How did it get from start to end?"
+    "growth_dynamics": [
+        "net_change_per_hour",      # average rate over the whole window
+        "max_slope",                # peak instantaneous rate
+        "auc_per_hour",             # average level over time (distinct from rate)
+        "lag_time_est",             # onset of active growth
+        "growth_phase_duration",    # duration of the active growth phase
+    ],
+    # "Does the trajectory look like real growth, or an artifact?"
+    "shape_integrity": [
+        "monotonicity_fraction",    # overall directional consistency
+        "largest_drop_frac",        # worst single decline
+        "multi_phase_flag",         # diauxic / double-peak detector
+        "roughness",                # raw jaggedness (includes trend)
+        "noise_residual_std",       # noise after removing trend (isolates noise alone)
+    ],
+}
+
+
+STAGE1_CANDIDATE_POOL = [f for group in STAGE1_FEATURE_GROUPS.values() for f in group]
+
+# Production feature set. Evaluated once, on a held-out test set untouched by
+# any selection step, against Top-10 and Top-8 (by cross-validated
+# permutation importance) and a greedy, CV-stability-voted subset -- see
+# Stage1_Feature_Analysis_And_Selection.ipynb, Section 7. The full 16-feature
+# pool won outright (best or tied-best balanced accuracy, F1, and ROC-AUC
+# across LR/RF/HGB), so nothing is dropped from it for production. Defined
+# directly from STAGE1_CANDIDATE_POOL rather than as a separately
+# hand-maintained list, so the two can't silently drift apart again the way
+# the old 8-feature STAGE1_SELECTED_FEATURES did from its candidate pool.
+
+STAGE1_SELECTED_FEATURES = list(STAGE1_CANDIDATE_POOL)
+LEAKAGE_COLS = {"best_model_name"}
 
 IDENTIFIER_COLS = {
     "FileName",
@@ -77,8 +104,18 @@ IDENTIFIER_COLS = {
     "Concentration",
     "base_curve_id",
     "aug_id",
+    "tmax_original",
+    "train_horizon",
+    "is_synthetic",
+    "is_censored",
+
 }
 LEAKAGE_COLS = {"best_model_name"}
+
+# CANDIDATE_SPARSITY_AWARE_FEATURES = [
+#     "n_points_observed", "max_gap_hours", "missing_frac_on_grid",
+# ]
+
 
 
 def normalize_label(series: pd.Series) -> pd.Series:

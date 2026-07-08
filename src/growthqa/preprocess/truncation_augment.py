@@ -7,7 +7,7 @@ from typing import Iterable, List
 import numpy as np
 import pandas as pd
 
-from growthqa.preprocess.timegrid import parse_time_from_header, get_sorted_time_columns
+from growthqa.preprocess.timegrid import parse_time_from_header, get_sorted_time_columns, build_common_grid
 _FULL_HORIZON_DEFAULT = 16.0
 
 def _time_values(time_cols: Iterable[str]) -> np.ndarray:
@@ -133,6 +133,106 @@ def apply_truncation(row: pd.Series, time_cols: List[str], h: float) -> pd.Serie
         if t is not None and float(t) > float(h) + 1e-9:
             out[c] = np.nan
     return out
+
+def augment_raw_wide(
+    df_wide_raw: pd.DataFrame,
+    candidate_horizons: List[float],
+    *,
+    per_curve: int = 3,
+    seed: int = 123,
+    full_horizon: float = _FULL_HORIZON_DEFAULT,
+    step_hours: float = 0.5,
+) -> pd.DataFrame:
+    """
+    Truncate each curve's TRUE raw observations to a sampled set of
+    candidate horizons, BEFORE any interpolation happens.
+
+    This must run on genuinely raw wide input (arbitrary native time
+    spacing per file), not on the output of build_raw_merged. Truncating
+    an already-interpolated curve leaks future observations into the
+    "as observed up to hour X" training examples: interpolation fills
+    gaps using real points that, in the scenario being simulated, haven't
+    been measured yet. Masking the raw timestamps first means each
+    truncated variant, once interpolated separately by build_raw_merged,
+    only ever reflects points that genuinely existed by that horizon.
+
+    Horizon SNAPPING uses the canonical step_hours grid (independent of
+    this file's native column spacing), so train_horizon has the same
+    meaning across files with different native resolutions. Horizon
+    MASKING uses each curve's real native timestamps directly.
+
+    Deliberately does not compute too_sparse / low_resolution / the raw
+    sparsity diagnostics here — build_raw_merged() computes those fresh,
+    per truncated variant, once base_curve_id/aug_id are present as
+    grouping keys (see interpolate._get_meta_cols).
+    """
+    time_cols = get_sorted_time_columns(df_wide_raw)
+    if not time_cols:
+        out = df_wide_raw.copy()
+        out["tmax_original"] = np.nan
+        return out
+
+    canonical_grid = build_common_grid(step_hours=float(step_hours), tmax_hours=float(full_horizon))
+
+    used_base_ids: set[str] = set()
+    missing_conc_counts: dict[str, int] = {}
+    rows: list[pd.Series] = []
+    candidates = sorted(float(h) for h in candidate_horizons)
+
+    for idx, row in df_wide_raw.iterrows():
+        test_id = _sanitize_token(row.get("Test Id"))
+        if not test_id:
+            continue
+
+        tmax_original = compute_tmax_original(row, time_cols)
+        if not np.isfinite(tmax_original):
+            continue
+
+        base_test = _sanitize_token(row.get("Test Id")) or make_base_curve_id(row, fallback_index=int(idx))
+        conc = _conc_token(row.get("Concentration", np.nan))
+        if conc:
+            suffix = conc
+        else:
+            c = missing_conc_counts.get(base_test, 0) + 1
+            missing_conc_counts[base_test] = c
+            suffix = _index_to_letters(c)
+        base_curve_id = f"{base_test}_{suffix}"
+        if base_curve_id in used_base_ids:
+            k = 2
+            while f"{base_curve_id}_{k}" in used_base_ids:
+                k += 1
+            base_curve_id = f"{base_curve_id}_{k}"
+        used_base_ids.add(base_curve_id)
+
+        sampled = sample_valid_horizons(
+            tmax_original=float(tmax_original),
+            candidate_horizons=candidates,
+            per_curve=per_curve,
+            seed=seed,
+            base_curve_id=base_curve_id,
+            grid_times=canonical_grid,
+        )
+        if len(sampled) < 2:
+            continue
+
+        for h in sampled:
+            out = row.copy()
+            for c in time_cols:
+                t = parse_time_from_header(str(c))
+                if t is not None and float(t) > float(h) + 1e-9:
+                    out[c] = np.nan
+            out["base_curve_id"] = base_curve_id
+            out["train_horizon"] = float(h)
+            out["tmax_original"] = float(tmax_original)
+            out["is_censored"] = int(float(h) < float(full_horizon))
+            out["aug_id"] = make_aug_id(base_curve_id, float(h))
+            rows.append(out)
+
+    if not rows:
+        out = df_wide_raw.iloc[0:0].copy()
+        out["tmax_original"] = pd.Series(dtype=float)
+        return out
+    return pd.DataFrame(rows).reset_index(drop=True)
 
 
 def augment_df(

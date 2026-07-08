@@ -13,7 +13,7 @@ from growthqa.preprocess.interpolate import build_raw_merged
 from growthqa.preprocess.transform import preprocess_wide
 from growthqa.features.meta import build_metadata_from_wide
 from growthqa.preprocess.timegrid import get_sorted_time_columns
-from growthqa.preprocess.truncation_augment import augment_df
+from growthqa.preprocess.truncation_augment import augment_df, augment_raw_wide
 
 
 # Canonical column contracts for the two intermediate artifacts.
@@ -31,8 +31,11 @@ FINAL_ID_COLS = [
     "tmax_original",
     "train_horizon",
     "is_censored",
-    "too_sparse",
+    "too_sparse", 
     "low_resolution",
+    "n_points_observed_raw", 
+    "max_gap_hours_raw",
+    "missing_frac_on_grid_raw",
     "is_synthetic",
 ]
 
@@ -107,20 +110,42 @@ def run_merge_preprocess_meta(
         tmax_hours=tmax_hours,
     )
 
-    # Truncation augmentation expands each original curve into several partial
-    # observation states. It runs on a copy so raw_merged_df stays the originals.
+        # Truncation augmentation expands each original curve into several partial
+    # observation states, simulating "as observed up to hour X so far".
+    #
+    # IMPORTANT: truncation must happen on the TRUE RAW data (df_in), before
+    # interpolation, not on raw_merged_df. Truncating an already-interpolated
+    # curve leaks future observations into these training examples: if a real
+    # gap between two measurements straddles the truncation horizon,
+    # interpolating the FULL curve first means the value assigned inside that
+    # gap is computed using a later point the truncated scenario is supposed
+    # to represent as "not yet observed". Truncating the raw timestamps first
+    # means each variant is interpolated independently by build_raw_merged,
+    # using only points that genuinely existed by that horizon.
     if augment_trunc:
         hs = trunc_horizons or TRAIN_TRUNC_HORIZONS
-        final_input_df = augment_df(
-            raw_merged_df,
+        truncated_raw_df = augment_raw_wide(
+            df_in,
             candidate_horizons=hs,
             per_curve=trunc_per_curve,
             seed=trunc_seed,
             full_horizon=float(tmax_hours or TRAIN_TMAX_HOURS),
+            step_hours=step,
         )
-        log.info("Truncation augmentation: per_curve=%s horizons=%s", trunc_per_curve, hs)
+        # build_raw_merged groups by base_curve_id/aug_id/train_horizon when
+        # present (see interpolate._get_meta_cols), so each truncated variant
+        # of the same curve is interpolated as its own independent row.
+        final_input_df = build_raw_merged(
+            truncated_raw_df,
+            step_hours=step,
+            min_points=min_points,
+            low_res_threshold=low_res_threshold,
+            tmax_hours=tmax_hours,
+        )
+        log.info("Truncation augmentation (raw-first): per_curve=%s horizons=%s", trunc_per_curve, hs)
     else:
         final_input_df = raw_merged_df
+
 
     blank_status_map = load_blank_status_map(blank_status_csv) if blank_status_csv else None
 

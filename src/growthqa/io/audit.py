@@ -18,6 +18,9 @@ AUDIT_META_FEATURES: list[str] = [
     "n_points_observed",
     "max_gap_hours",
     "missing_frac_on_grid",
+    "too_sparse",
+    "low_resolution",
+    "grid_resolution_mismatch", 
     "auc_per_hour",
     "net_change_per_hour",
     "max_slope",
@@ -220,17 +223,23 @@ def build_classifier_audit_df(
     if sparse_mask.any():
         df.loc[sparse_mask, "Pred Label"] = "Unsure"
         df.loc[sparse_mask, "True Label"] = "Unsure"
+        if "final_label" in df.columns:
+            df.loc[sparse_mask, "final_label"] = "Unsure"
+        if "Final Label (S1+S2)" in df.columns:
+            df.loc[sparse_mask, "Final Label (S1+S2)"] = "Unsure"
+        if "pred_label" in df.columns:
+            df.loc[sparse_mask, "pred_label"] = "Unsure"
         if "Label Reason" in df.columns:
             df.loc[sparse_mask, "Label Reason"] = "TOO_SPARSE_OVERRIDE"
 
     ordered: list[str] = []
 
-        # ----------------------------------------------------
+    # ----------------------------------------------------
     # Curve ID column cleanup (clean debug philosophy)
     # ----------------------------------------------------
     if "curve_id" in df.columns and "curve_key" in df.columns:
         same_mask = (
-            df["curve_id"].astype(str).fillna("") 
+            df["curve_id"].astype(str).fillna("")
             == df["curve_key"].astype(str).fillna("")
         )
 
@@ -240,18 +249,19 @@ def build_classifier_audit_df(
         else:
             # They differ somewhere → keep both (debug needed)
             pass
+
     for must in ["Test Id", "Concentration", "curve_key", "Pred Label", "Pred Confidence",
-                  "S1 Confidence Valid", "S1 Confidence Invalid",
+                 "S1 Confidence Valid", "S1 Confidence Invalid",
                  "Stage 2 Label", "Label Reason", "True Label", "Reviewed"]:
         if must in df.columns and must not in ordered:
-            ordered.insert(min(len(ordered), 3) if must in {"curve_key"} else len(ordered), must)
-    
+            ordered.insert(min(len(ordered), 3) if must == "curve_key" else len(ordered), must)
+
     ordered += [c for c in base_infer_cols if c in df.columns]
     ordered += [c for c in meta_cols if c in df.columns]
     ordered += [c for c in late_cols if c in df.columns]
     ordered += [c for c in time_cols if c in df.columns]
 
- # De-duplicate while preserving order
+    # De-duplicate while preserving order
     seen = set()
     ordered_unique = []
     for c in ordered:

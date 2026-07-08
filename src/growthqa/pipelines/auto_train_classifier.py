@@ -3,7 +3,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from growthqa.classifier.train_from_meta import train_from_meta_csv
+from growthqa.classifier.train_from_meta import STAGE1_SELECTED_FEATURES, train_from_meta_csv
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -35,5 +35,5 @@ def train_classifier_from_meta_file(
     return train_from_meta_csv(
         meta_csv=meta_csv_path,
         art_dir=models_out_dir,
-        selected_features=selected_features,
+        selected_features=STAGE1_SELECTED_FEATURES,
     )

@@ -29,16 +29,9 @@ from utils import (
     resolve_display_label,
     
 )
-
-# growthqa imports
 from growthqa.preprocess.timegrid import parse_time_from_header, get_time_columns
 from growthqa.io.audit import build_classifier_audit_df
 from growthqa.io.grofit_io import build_grofit_input_df as _build_grofit_artifact
-
-
-# ---------------------------------------------------------------------------
-# Concentration-column detection
-# ---------------------------------------------------------------------------
 
 def find_concentration_col(df: pd.DataFrame) -> str | None:
     candidates = ["concentration", "Concentration", "conc", "Conc",
@@ -50,10 +43,6 @@ def find_concentration_col(df: pd.DataFrame) -> str | None:
         if c.lower() in lower_map: return lower_map[c.lower()]
     return None
 
-
-# ---------------------------------------------------------------------------
-# Wide → Grofit tidy
-# ---------------------------------------------------------------------------
 
 def wide_to_grofit_tidy(
     wide_df: pd.DataFrame, *, file_tag: str, test_id_col: str = "Test Id",
@@ -93,11 +82,6 @@ def wide_to_grofit_tidy(
     tidy = tidy.dropna(subset=["time", "y"])
     return tidy[["test_id", "curve_id", "concentration", "time", "y"]]
 
-
-# ---------------------------------------------------------------------------
-# Review-df initialisation
-# ---------------------------------------------------------------------------
-
 def init_review_df(out_df: pd.DataFrame, wide_df: pd.DataFrame) -> pd.DataFrame:
     df = out_df.copy()
     if "is_valid_pred"  not in df.columns: df["is_valid_pred"]  = df["pred_label"].map(label_is_valid)
@@ -118,10 +102,6 @@ def init_review_df(out_df: pd.DataFrame, wide_df: pd.DataFrame) -> pd.DataFrame:
         lambda r: make_curve_key(str(r["Test Id"]), r["Concentration"]), axis=1
     )
     return df
-
-# ---------------------------------------------------------------------------
-# Pipeline-config record (single schema, used by the Auditing zip)
-# ---------------------------------------------------------------------------
 
 def build_run_info(
     *,
@@ -158,17 +138,12 @@ def build_run_info(
         },
     }
 
-# ---------------------------------------------------------------------------
-# Classifier audit & Grofit input builders
-# ---------------------------------------------------------------------------
-
 def build_classifier_output(
     *, wide_df: pd.DataFrame, out_df: pd.DataFrame,
     review_df: pd.DataFrame | None, manual_review_mode: bool,
     meta_df: pd.DataFrame | None = None,
     processed_wide_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    # kwargs = dict(
     return build_classifier_audit_df(
         wide_original_df=wide_df,
         infer_df=out_df,
@@ -178,7 +153,6 @@ def build_classifier_output(
         processed_wide_df=processed_wide_df,
 
     )
- 
  
 def build_grofit_input_df(
     *, wide_df: pd.DataFrame, out_df: pd.DataFrame,
@@ -192,11 +166,6 @@ def build_grofit_input_df(
             manual_review_mode=manual_review_mode, meta_df=meta_df,
         )
     return _build_grofit_artifact(wide_original_df=wide_df, audit_df=audit_df)
-
-
-# ---------------------------------------------------------------------------
-# Export ZIP
-# ---------------------------------------------------------------------------
 
 def build_export_zip(
     *, wide_df: pd.DataFrame, out_df: pd.DataFrame,
@@ -240,7 +209,6 @@ def build_export_zip(
     No file appears in both zips.
     """
 
-    # Late imports to avoid circular dependencies
     from growthqa.grofit.pipeline import run_grofit_pipeline
     from growthqa.viz.payloads import build_curve_payloads, build_dr_payload
     from plots import make_overlay_plot_payload, make_dr_plot
@@ -286,7 +254,6 @@ def build_export_zip(
     def _csv(df: pd.DataFrame) -> bytes:
         return df.to_csv(index=False).encode("utf-8")
 
-    # --- determine allowed IDs by label filter ---
     label_candidates = (
         ["Pred Label", "pred_label", "True Label"] if mode_label == "AUTO"
         else ["True Label", "Pred Label", "pred_label"]
@@ -297,13 +264,16 @@ def build_export_zip(
         if lcol:
             labels = classifier_df[lcol].map(normalize_label)
             f = str(export_label_filter or "Valid").strip().lower()
-            if f == "all":     mask = labels.isin(["Valid", "Invalid", "Unsure"])
-            elif f == "invalid": mask = labels == "Invalid"
-            elif f == "unsure":  mask = labels == "Unsure"
-            else:                mask = labels == "Valid"
+            if f == "all":     
+                mask = labels.isin(["Valid", "Invalid", "Unsure"])
+            elif f == "invalid": 
+                mask = labels == "Invalid"
+            elif f == "unsure":  
+                mask = labels == "Unsure"
+            else:                
+                mask = labels == "Valid"
             allowed_ids = classifier_df.loc[mask, "Test Id"].astype(str).drop_duplicates().tolist()
 
-# --- filter GC tables (fit, boot, audit share the same add.id join key) ---
     gc_fit_out   = gc_fit.copy()
     gc_boot_out  = gc_boot.copy()
     gc_audit_out = gc_audit.copy() if isinstance(gc_audit, pd.DataFrame) else pd.DataFrame()
@@ -316,7 +286,6 @@ def build_export_zip(
         else:
             tbl.drop(tbl.index, inplace=True)
 
-    # --- DR re-computation for filtered label set ---
     dr_fit_out, dr_boot_out = dr_fit.copy(), dr_boot.copy()
     dr_audit_out = dr_audit.copy() if isinstance(dr_audit, pd.DataFrame) else pd.DataFrame()
 
@@ -326,8 +295,10 @@ def build_export_zip(
         if lcol:
             _lbl = classifier_df[lcol].map(normalize_label).astype(str)
             keep = _lbl.eq("Valid")
-            if export_dr_include_unsure:  keep |= _lbl.eq("Unsure")
-            if export_dr_include_invalid: keep |= _lbl.eq("Invalid")
+            if export_dr_include_unsure:  
+                keep |= _lbl.eq("Unsure")
+            if export_dr_include_invalid: 
+                keep |= _lbl.eq("Invalid")
             dr_allowed_ids = classifier_df.loc[keep, "Test Id"].astype(str).drop_duplicates().tolist()
 
     if isinstance(grofit_tidy_all, pd.DataFrame) and not grofit_tidy_all.empty:
@@ -407,7 +378,6 @@ def build_export_zip(
                 zf.writestr(f"plots/{safe_tid}.html", fig.to_html(full_html=True, include_plotlyjs="cdn"))
                 n_plots += 1
 
-        # --- DR plot ---
         if (isinstance(dr_fit_out, pd.DataFrame) and not dr_fit_out.empty
                 and isinstance(gc_fit_out, pd.DataFrame) and not gc_fit_out.empty
                 and isinstance(classifier_df, pd.DataFrame) and not classifier_df.empty
@@ -447,13 +417,19 @@ def build_export_zip(
         if n_plots == 0:
             zf.writestr("plots/README.txt", "No plot assets could be generated for this run.")
 
-    # return zip_name, bio.getvalue()
     auditing_bio = io.BytesIO()
     with zipfile.ZipFile(auditing_bio, "w", compression=zipfile.ZIP_DEFLATED) as az:
         az.writestr("run_info.json", json.dumps(run_info, indent=2))
         az.writestr("classifier_audit.csv", _csv(classifier_df))
         az.writestr("grofit_input.csv", _csv(grofit_input_df))
-        if isinstance(gc_audit_out, pd.DataFrame) and not gc_audit_out.empty:
+        if isinstance(gc_audit_out, pd.DataFrame) and not gc_audit_out.empty and "add.id" in gc_audit_out.columns and isinstance(classifier_df, pd.DataFrame) and not classifier_df.empty and "Test Id" in classifier_df.columns:
+            _diag_cols = [c for c in [
+                "n_points_observed", "max_gap_hours", "missing_frac_on_grid", "too_sparse", "low_resolution",
+            ] if c in classifier_df.columns]
+            if _diag_cols:
+                _diag = classifier_df[["Test Id"] + _diag_cols].drop_duplicates("Test Id")
+                gc_audit_out = gc_audit_out.merge(_diag, left_on="add.id", right_on="Test Id", how="left", suffixes=("", "_diag"),).drop(columns=["Test Id"], errors="ignore")
+
             az.writestr("gc_audit.csv", _csv(gc_audit_out))
         if isinstance(dr_audit_out, pd.DataFrame) and not dr_audit_out.empty:
             az.writestr("dr_audit.csv", _csv(dr_audit_out))
