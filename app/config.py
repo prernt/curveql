@@ -12,7 +12,9 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Repository root & sys.path bootstrap
 # ---------------------------------------------------------------------------
-# config.py lives in <repo>/app/, so parents[1] is the repo root.
+# config.py lives in <repo>/app/, so parents[1] is the repo root. Computed
+# locally (not imported from growthqa.config) because this bootstrap has to
+# run before growthqa is guaranteed to be importable at all.
 ROOT = Path(__file__).resolve().parents[1]
 
 for _cand in {ROOT, ROOT / "src", Path.cwd(), Path.cwd() / "src"}:
@@ -22,10 +24,21 @@ for _cand in {ROOT, ROOT / "src", Path.cwd(), Path.cwd() / "src"}:
             sys.path.insert(0, _sp)
 
 # ---------------------------------------------------------------------------
-# Well-known paths
+# Well-known paths and preprocessing defaults, shared with the training
+# pipeline. Imported from growthqa.config -- the single source of truth --
+# rather than redefined here, now that sys.path includes src/.
 # ---------------------------------------------------------------------------
-MODEL_DIR  = ROOT / "classifier_output" / "saved_models_selected"
-TRAIN_META = ROOT / "data" / "train_data" / "training_meta.csv"
+from growthqa.config import (
+    MODEL_DIR,
+    TRAIN_META_CSV as TRAIN_META,
+    STEP_HOURS as _STEP_HOURS,
+    MIN_POINTS as _MIN_POINTS,
+    LOW_RES_THRESHOLD as _LOW_RES_THRESHOLD,
+    TMAX_HOURS as _TMAX_HOURS,
+    SMOOTH_METHOD as _SMOOTH_METHOD,
+    SMOOTH_WINDOW as _SMOOTH_WINDOW,
+    NORMALIZE as _NORMALIZE,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -39,19 +52,21 @@ class InferenceSettings:
     input_is_raw: bool         = False
     global_blank: float | None = None
 
-    # Fixed pipeline defaults (not shown in UI)
-    step: float                = 0.5
-    min_points: int            = 3
-    low_res_threshold: int     = 7
+    # Fixed pipeline defaults (not shown in UI) -- pinned to the same values
+    # training uses (growthqa.config), so an uploaded curve is preprocessed
+    # identically to the training set.
+    step: float                = _STEP_HOURS
+    min_points: int            = _MIN_POINTS
+    low_res_threshold: int     = _LOW_RES_THRESHOLD
     auto_tmax: bool            = False
     auto_tmax_coverage: float  = 0.8
-    tmax_hours: float | None   = 16.0
+    tmax_hours: float | None   = _TMAX_HOURS
 
     # Locked values
     clip_negatives: bool = False
-    smooth_method: str   = "SGF"    # Savitzky-Golay
-    smooth_window: int   = 5
-    normalize: str       = "MINMAX"
+    smooth_method: str   = _SMOOTH_METHOD
+    smooth_window: int   = _SMOOTH_WINDOW
+    normalize: str       = _NORMALIZE
 
 
 @dataclass

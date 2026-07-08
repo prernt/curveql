@@ -126,14 +126,6 @@ def sample_valid_horizons(
     return sorted(float(h) for h in picked)
 
 
-def apply_truncation(row: pd.Series, time_cols: List[str], h: float) -> pd.Series:
-    out = row.copy()
-    for c in time_cols:
-        t = parse_time_from_header(str(c))
-        if t is not None and float(t) > float(h) + 1e-9:
-            out[c] = np.nan
-    return out
-
 def augment_raw_wide(
     df_wide_raw: pd.DataFrame,
     candidate_horizons: List[float],
@@ -230,79 +222,6 @@ def augment_raw_wide(
 
     if not rows:
         out = df_wide_raw.iloc[0:0].copy()
-        out["tmax_original"] = pd.Series(dtype=float)
-        return out
-    return pd.DataFrame(rows).reset_index(drop=True)
-
-
-def augment_df(
-    df_wide: pd.DataFrame,
-    candidate_horizons: List[float],
-    *,
-    per_curve: int = 3,
-    seed: int = 123,
-    full_horizon: float = _FULL_HORIZON_DEFAULT,
-) -> pd.DataFrame:
-     
-    time_cols = get_sorted_time_columns(df_wide)
-    grid_times = _time_values(time_cols)
-    if not time_cols:
-        out = df_wide.copy()
-        out["tmax_original"] = np.nan
-        return out
-
-    used_base_ids: set[str] = set()
-    missing_conc_counts: dict[str, int] = {}
-    rows: list[pd.Series] = []
-    candidates = sorted(float(h) for h in candidate_horizons)
-
-    for idx, row in df_wide.iterrows():
-        test_id = _sanitize_token(row.get("Test Id"))
-        if not test_id:
-            continue
-
-        tmax_original = compute_tmax_original(row, time_cols)
-        if not np.isfinite(tmax_original):
-            continue
-
-        base_test = _sanitize_token(row.get("Test Id")) or make_base_curve_id(row, fallback_index=int(idx))
-        conc = _conc_token(row.get("Concentration", np.nan))
-        if conc:
-            suffix = conc
-        else:
-            c = missing_conc_counts.get(base_test, 0) + 1
-            missing_conc_counts[base_test] = c
-            suffix = _index_to_letters(c)
-        base_curve_id = f"{base_test}_{suffix}"
-        if base_curve_id in used_base_ids:
-            k = 2
-            while f"{base_curve_id}_{k}" in used_base_ids:
-                k += 1
-            base_curve_id = f"{base_curve_id}_{k}"
-        used_base_ids.add(base_curve_id)
-
-        sampled = sample_valid_horizons(
-            tmax_original=float(tmax_original),
-            candidate_horizons=candidates,
-            per_curve=per_curve,
-            seed=seed,
-            base_curve_id=base_curve_id,
-            grid_times=grid_times,
-        )
-        if len(sampled) < 2:
-            continue
-
-        for h in sampled:
-            r = apply_truncation(row, time_cols, h)
-            r["base_curve_id"] = base_curve_id
-            r["train_horizon"] = float(h)
-            r["tmax_original"] = float(tmax_original)
-            r["is_censored"] = int(float(h) < float(full_horizon))
-            r["aug_id"] = make_aug_id(base_curve_id, float(h))
-            rows.append(r)
-
-    if not rows:
-        out = df_wide.iloc[0:0].copy()
         out["tmax_original"] = pd.Series(dtype=float)
         return out
     return pd.DataFrame(rows).reset_index(drop=True)

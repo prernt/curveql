@@ -26,6 +26,8 @@ def _get_meta_cols(df_wide: pd.DataFrame) -> List[str]:
         "is_censored",
         "source_type",
         "is_synthetic",
+        "gap_augmented",
+        "gap_pattern",
     ]:
         if c in df_wide.columns and c not in cols:
             cols.append(c)

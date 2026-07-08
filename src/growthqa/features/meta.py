@@ -137,16 +137,12 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
             "is_censored": is_censored,
             "n_points_observed": n_points_observed,
             "max_gap_hours": max_gap_hours,
-            "median_dt_hours": median_dt_hours,
             "missing_frac_on_grid": missing_frac_on_grid,
             "low_resolution": int(low_res_ctx),
             "too_sparse": int(sparse_ctx),
             "grid_resolution_mismatch": int(grid_resolution_mismatch),
             "initial_OD": np.nan,
             "final_OD": np.nan,
-            "max_OD": np.nan,
-            "min_OD": np.nan,
-            "range_OD": np.nan,
             "auc": np.nan,
             "auc_per_hour": np.nan,
             "net_change_per_hour": np.nan,
@@ -155,14 +151,12 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
             "time_of_max_OD": np.nan,
             "monotonicity_fraction": np.nan,
             "largest_drop_frac": np.nan,
-            "dip_fraction": np.nan,
             "roughness": np.nan,
             "noise_residual_std": np.nan,
             "lag_time_est": np.nan,
             "plateau_OD": np.nan,
             "growth_phase_duration": np.nan,
             "symmetry_factor": np.nan,
-            "final_to_peak_ratio": np.nan,
             "num_slope_sign_changes": np.nan,
             "multi_phase_flag": np.nan,
             "logistic_fit_mse": np.nan,
@@ -216,9 +210,6 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
     largest_drop_frac = np.nan
     if dy.size > 0 and range_od > 1e-9 and np.any(dy < 0):
         largest_drop_frac = float(abs(np.nanmin(dy)) / range_od)
-    dip_fraction = np.nan
-    if dy.size > 0 and range_od > 1e-9:
-        dip_fraction = float(np.sum(np.clip(-dy, 0, None)) / range_od)
 
     roughness = float(np.nanstd(dy)) if dy.size > 0 else np.nan
     noise_residual_std = np.nan
@@ -250,7 +241,6 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
     symmetry_factor = (
         float((time_of_max_od - t[0]) / total_dur) if np.isfinite(total_dur) and total_dur > 1e-12 else np.nan
     )
-    final_to_peak_ratio = float(final_od / max_od) if max_od > 1e-12 else np.nan
     num_slope_sign_changes = 0
     if slopes.size and np.any(np.isfinite(slopes)):
         s = np.sign(slopes.copy())
@@ -323,16 +313,12 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
         "is_censored": int(is_censored),
         "n_points_observed": n_points_observed,
         "max_gap_hours": max_gap_hours,
-        "median_dt_hours": median_dt_hours,
         "missing_frac_on_grid": missing_frac_on_grid,
         "low_resolution": int(low_res_ctx),
         "too_sparse": int(sparse_ctx),
         "grid_resolution_mismatch": int(grid_resolution_mismatch),
         "initial_OD": initial_od,
         "final_OD": final_od,
-        "max_OD": max_od,
-        "min_OD": min_od,
-        "range_OD": range_od,
         "auc": auc,
         "auc_per_hour": auc_per_hour,
         "net_change_per_hour": net_change_per_hour,
@@ -341,14 +327,12 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
         "time_of_max_OD": time_of_max_od,
         "monotonicity_fraction": mono,
         "largest_drop_frac": largest_drop_frac,
-        "dip_fraction": dip_fraction,
         "roughness": roughness,
         "noise_residual_std": noise_residual_std,
         "lag_time_est": lag_time,
         "plateau_OD": plateau_od,
         "growth_phase_duration": growth_phase_duration,
         "symmetry_factor": symmetry_factor,
-        "final_to_peak_ratio": final_to_peak_ratio,
         "num_slope_sign_changes": num_slope_sign_changes,
         "multi_phase_flag": int(bool(multi_phase_flag)),
         "logistic_fit_mse": logistic_fit_mse,
@@ -378,12 +362,13 @@ def build_metadata_from_wide(final_wide: pd.DataFrame, *, rich_meta: bool = Fals
             "Model Name": r.get("Model Name"),
             "Concentration": r.get("Concentration", np.nan),
             "Is_Valid": _safe_label(r.get("Is_Valid", pd.NA)),
-            "had_outliers": int(bool(r.get("had_outliers", False))),
             "source_type": source_type,
             "is_synthetic": int(is_synth),
             "base_curve_id": r.get("base_curve_id"),
             "aug_id": r.get("aug_id"),
             "tmax_original": r.get("tmax_original", np.nan),
+            "gap_augmented": int(pd.to_numeric(pd.Series([r.get("gap_augmented", 0)]), errors="coerce").fillna(0).iloc[0]),
+            "gap_pattern": r.get("gap_pattern", None),
             **feats,
         }
         rows.append(row)

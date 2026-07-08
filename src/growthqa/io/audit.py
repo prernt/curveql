@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from growthqa.preprocess.timegrid import get_sorted_time_columns
+from growthqa.config import MAX_GAP_HOURS_OVERRIDE, MISSING_FRAC_OVERRIDE
 from app.utils import resolve_display_label
 
 
@@ -20,16 +21,15 @@ AUDIT_META_FEATURES: list[str] = [
     "missing_frac_on_grid",
     "too_sparse",
     "low_resolution",
-    "grid_resolution_mismatch", 
+    "grid_resolution_mismatch",
     "auc_per_hour",
     "net_change_per_hour",
     "max_slope",
     "lag_time_est",
-    "dip_fraction",
     "largest_drop_frac",
     "monotonicity_fraction",
     "roughness",
-    "final_to_peak_ratio",
+    "final_OD",
 ]
 
 # ============================================================
@@ -217,6 +217,28 @@ def build_classifier_audit_df(
 
     # normalize Reviewed to boolean
     df["Reviewed"] = _col_as_series(df, "Reviewed", False).fillna(False).astype(bool)
+
+    # Out-of-distribution gap/missingness override for audit/export
+    # semantics. Kept in sync with the copy in infer_labels.py -- see that
+    # module for the full reasoning. Runs before the sparse override below
+    # so too_sparse's reason wins if a curve triggers both.
+    ood_gap_mask = (
+        pd.to_numeric(_col_as_series(df, "max_gap_hours", np.nan), errors="coerce") > MAX_GAP_HOURS_OVERRIDE
+    ) | (
+        pd.to_numeric(_col_as_series(df, "missing_frac_on_grid", np.nan), errors="coerce") > MISSING_FRAC_OVERRIDE
+    )
+    ood_gap_mask = ood_gap_mask.fillna(False)
+    if ood_gap_mask.any():
+        df.loc[ood_gap_mask, "Pred Label"] = "Unsure"
+        df.loc[ood_gap_mask, "True Label"] = "Unsure"
+        if "final_label" in df.columns:
+            df.loc[ood_gap_mask, "final_label"] = "Unsure"
+        if "Final Label (S1+S2)" in df.columns:
+            df.loc[ood_gap_mask, "Final Label (S1+S2)"] = "Unsure"
+        if "pred_label" in df.columns:
+            df.loc[ood_gap_mask, "pred_label"] = "Unsure"
+        if "Label Reason" in df.columns:
+            df.loc[ood_gap_mask, "Label Reason"] = "OUT_OF_DISTRIBUTION_GAP_OVERRIDE"
 
     # Authoritative sparse override for audit/export semantics.
     sparse_mask = pd.to_numeric(_col_as_series(df, "too_sparse", 0), errors="coerce").fillna(0).astype(int).eq(1)

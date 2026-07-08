@@ -22,6 +22,7 @@ from growthqa.pipelines.build_meta_dataset import (
     TRAIN_SMOOTH_WINDOW,
     TRAIN_NORMALIZE,
 )
+from growthqa.config import MIN_POINTS, LOW_RES_THRESHOLD, MAX_GAP_HOURS_OVERRIDE, MISSING_FRAC_OVERRIDE
 from growthqa.preprocess.timegrid import parse_time_from_header, get_sorted_time_columns
 
 # Stage-2 (evidence-based checker)
@@ -479,11 +480,11 @@ def run_label_inference_from_uploaded_wide(
             out_raw=None,
             out_final=None,
             out_meta=None,
-            # Pinned to the training configuration (TRAIN_* in build_meta_dataset)
-            # so an uploaded curve is preprocessed identically to the training set.
+            # Pinned to the training configuration (growthqa.config) so an
+            # uploaded curve is preprocessed identically to the training set.
             step=TRAIN_STEP_HOURS,
-            min_points=3,
-            low_res_threshold=7,
+            min_points=MIN_POINTS,
+            low_res_threshold=LOW_RES_THRESHOLD,
             tmax_hours=TRAIN_TMAX_HOURS,
             blank_subtracted=True,
             clip_negatives=False,
@@ -588,7 +589,32 @@ def run_label_inference_from_uploaded_wide(
     # Checker outputs + conservative final label
     out_df = _assign_stage2_checker_outputs(out_df, cfg=stage2_cfg, unsure_conf_threshold=unsure_conf_threshold)
 
+    # Out-of-distribution gap/missingness override: independent of the ML
+    # model and of too_sparse (which only looks at point COUNT, not gap size
+    # or overall missingness). A curve whose max_gap_hours or
+    # missing_frac_on_grid falls beyond what the training data actually
+    # covers should not be trusted on the model's opinion alone --
+    # tree-based models (RF/HGB) extrapolate poorly past the edge of their
+    # training range. This is a plain, auditable threshold, not a learned
+    # one, and is calibrated against the training data's own coverage (see
+    # growthqa.config.MAX_GAP_HOURS_OVERRIDE / MISSING_FRAC_OVERRIDE).
+    ood_gap_mask = (
+        pd.to_numeric(out_df.get("max_gap_hours", np.nan), errors="coerce") > MAX_GAP_HOURS_OVERRIDE
+    ) | (
+        pd.to_numeric(out_df.get("missing_frac_on_grid", np.nan), errors="coerce") > MISSING_FRAC_OVERRIDE
+    )
+    ood_gap_mask = ood_gap_mask.fillna(False)
+    if ood_gap_mask.any():
+        out_df.loc[ood_gap_mask, "final_label"] = "Unsure"
+        out_df.loc[ood_gap_mask, "Final Label (S1+S2)"] = "Unsure"
+        out_df.loc[ood_gap_mask, "Pred Label"] = "Unsure"
+        out_df.loc[ood_gap_mask, "pred_label"] = "Unsure"
+        out_df.loc[ood_gap_mask, "Label Reason"] = "OUT_OF_DISTRIBUTION_GAP_OVERRIDE"
+
     # Authoritative sparse override: sparse curves can never remain Valid.
+    # Runs after the gap override so its reason wins if a curve triggers
+    # both -- fewer than MIN_POINTS real observations is the more severe,
+    # more certain problem of the two.
     too_sparse_mask = pd.to_numeric(out_df.get("too_sparse", False), errors="coerce").fillna(0).astype(int).eq(1)
     if too_sparse_mask.any():
         out_df.loc[too_sparse_mask, "final_label"] = "Unsure"

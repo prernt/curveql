@@ -200,6 +200,8 @@ def preprocess_wide(raw_wide: pd.DataFrame,
         "is_censored",
         "source_type",
         "is_synthetic",
+        "gap_augmented",
+        "gap_pattern",
     ]
     meta_cols = [c for c in base_meta_cols if c in raw_wide.columns]
     if "Concentration" in raw_wide.columns and "Concentration" not in meta_cols:

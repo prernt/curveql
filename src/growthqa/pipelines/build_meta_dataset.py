@@ -13,7 +13,25 @@ from growthqa.preprocess.interpolate import build_raw_merged
 from growthqa.preprocess.transform import preprocess_wide
 from growthqa.features.meta import build_metadata_from_wide
 from growthqa.preprocess.timegrid import get_sorted_time_columns
-from growthqa.preprocess.truncation_augment import augment_df, augment_raw_wide
+from growthqa.preprocess.truncation_augment import augment_raw_wide
+from growthqa.preprocess.gap_augment import augment_raw_wide_with_gaps
+from growthqa.config import (
+    STEP_HOURS as TRAIN_STEP_HOURS,
+    TMAX_HOURS as TRAIN_TMAX_HOURS,
+    TRUNC_HORIZONS as TRAIN_TRUNC_HORIZONS,
+    TRUNC_PER_CURVE as TRAIN_TRUNC_PER_CURVE,
+    TRUNC_SEED as TRAIN_TRUNC_SEED,
+    SMOOTH_METHOD as TRAIN_SMOOTH_METHOD,
+    SMOOTH_WINDOW as TRAIN_SMOOTH_WINDOW,
+    NORMALIZE as TRAIN_NORMALIZE,
+    GAP_AUG_FRACTION as TRAIN_GAP_AUG_FRACTION,
+    GAP_AUG_PER_CURVE as TRAIN_GAP_AUG_PER_CURVE,
+    GAP_AUG_SEED as TRAIN_GAP_AUG_SEED,
+    GAP_MIN_HOURS as TRAIN_GAP_MIN_HOURS,
+    GAP_MAX_HOURS as TRAIN_GAP_MAX_HOURS,
+    GAP_MIN_MISSING_FRAC as TRAIN_GAP_MIN_MISSING_FRAC,
+    GAP_MAX_MISSING_FRAC as TRAIN_GAP_MAX_MISSING_FRAC,
+)
 
 
 # Canonical column contracts for the two intermediate artifacts.
@@ -31,25 +49,21 @@ FINAL_ID_COLS = [
     "tmax_original",
     "train_horizon",
     "is_censored",
-    "too_sparse", 
+    "too_sparse",
     "low_resolution",
-    "n_points_observed_raw", 
+    "n_points_observed_raw",
     "max_gap_hours_raw",
     "missing_frac_on_grid_raw",
     "is_synthetic",
+    "gap_augmented",
+    "gap_pattern",
 ]
 
-# Fixed configuration for the one-off training dataset. Pinning these here is
-# the single source of truth so the training_meta.csv is reproducible and uses
-# the same preprocessing as inference.
-TRAIN_STEP_HOURS = 0.5
-TRAIN_TMAX_HOURS = 16.0
-TRAIN_TRUNC_HORIZONS = [8.0, 10.0, 12.0, 14.75, 16.0]
-TRAIN_TRUNC_PER_CURVE = 3
-TRAIN_TRUNC_SEED = 123
-TRAIN_SMOOTH_METHOD = "SGF"
-TRAIN_SMOOTH_WINDOW = 5
-TRAIN_NORMALIZE = "MINMAX"
+# TRAIN_STEP_HOURS / TRAIN_TMAX_HOURS / TRAIN_TRUNC_* / TRAIN_SMOOTH_* /
+# TRAIN_NORMALIZE are imported from growthqa.config above (aliased to keep
+# the TRAIN_ prefix other modules already import) rather than redefined
+# here, so training and inference can never end up preprocessing curves
+# differently by one of the two copies drifting out of sync.
 
 
 def _order_columns(df: pd.DataFrame, id_cols: List[str]) -> pd.DataFrame:
@@ -87,6 +101,14 @@ def run_merge_preprocess_meta(
     trunc_horizons: Optional[List[float]] = None,
     trunc_per_curve: int = 3,
     trunc_seed: int = 123,
+    augment_gaps: bool = False,
+    gap_fraction: Optional[float] = None,
+    gap_per_curve: Optional[int] = None,
+    gap_seed: Optional[int] = None,
+    gap_min_hours: Optional[float] = None,
+    gap_max_hours: Optional[float] = None,
+    gap_min_missing_frac: Optional[float] = None,
+    gap_max_missing_frac: Optional[float] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     inputs (wide CSVs) -> raw_merged.csv -> final_merged.csv -> training_meta.csv
@@ -132,17 +154,52 @@ def run_merge_preprocess_meta(
             full_horizon=float(tmax_hours or TRAIN_TMAX_HOURS),
             step_hours=step,
         )
+        log.info("Truncation augmentation (raw-first): per_curve=%s horizons=%s", trunc_per_curve, hs)
+
+        augmented_raw_parts = [truncated_raw_df]
+
+        # Gap augmentation expands a subset of curves into variants with a
+        # real internal gap or scattered missingness injected -- distinct
+        # from truncation, which only ever removes the TAIL of a curve.
+        # Same raw-first requirement applies: this must run on df_in (true
+        # raw data), not on an already-interpolated table, or the injected
+        # gap would just be an already-filled value with nothing missing.
+        # Kept as a separate set of augmented rows unioned with the
+        # truncated ones, rather than combined into the same row, so each
+        # augmentation's effect stays independently attributable and
+        # auditable (see gap_augmented / gap_pattern columns).
+        if augment_gaps:
+            gap_raw_df = augment_raw_wide_with_gaps(
+                df_in,
+                frac_curves_to_augment=gap_fraction if gap_fraction is not None else TRAIN_GAP_AUG_FRACTION,
+                per_curve=gap_per_curve if gap_per_curve is not None else TRAIN_GAP_AUG_PER_CURVE,
+                seed=gap_seed if gap_seed is not None else TRAIN_GAP_AUG_SEED,
+                min_gap_hours=gap_min_hours if gap_min_hours is not None else TRAIN_GAP_MIN_HOURS,
+                max_gap_hours=gap_max_hours if gap_max_hours is not None else TRAIN_GAP_MAX_HOURS,
+                min_missing_frac=gap_min_missing_frac if gap_min_missing_frac is not None else TRAIN_GAP_MIN_MISSING_FRAC,
+                max_missing_frac=gap_max_missing_frac if gap_max_missing_frac is not None else TRAIN_GAP_MAX_MISSING_FRAC,
+            )
+            if not gap_raw_df.empty:
+                augmented_raw_parts.append(gap_raw_df)
+            log.info("Gap augmentation (raw-first): %d gap-augmented rows generated", len(gap_raw_df))
+
+        combined_raw_df = (
+            pd.concat(augmented_raw_parts, ignore_index=True, sort=False)
+            if len(augmented_raw_parts) > 1
+            else augmented_raw_parts[0]
+        )
+
         # build_raw_merged groups by base_curve_id/aug_id/train_horizon when
-        # present (see interpolate._get_meta_cols), so each truncated variant
-        # of the same curve is interpolated as its own independent row.
+        # present (see interpolate._get_meta_cols), so each augmented variant
+        # of the same curve -- whether truncated or gap-injected -- is
+        # interpolated as its own independent row.
         final_input_df = build_raw_merged(
-            truncated_raw_df,
+            combined_raw_df,
             step_hours=step,
             min_points=min_points,
             low_res_threshold=low_res_threshold,
             tmax_hours=tmax_hours,
         )
-        log.info("Truncation augmentation (raw-first): per_curve=%s horizons=%s", trunc_per_curve, hs)
     else:
         final_input_df = raw_merged_df
 
@@ -235,6 +292,7 @@ def build_training_meta(
             trunc_horizons=TRAIN_TRUNC_HORIZONS,
             trunc_per_curve=TRAIN_TRUNC_PER_CURVE,
             trunc_seed=TRAIN_TRUNC_SEED,
+            augment_gaps=True,
             loglevel="ERROR",
         )
 

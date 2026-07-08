@@ -161,7 +161,7 @@ def render_results(results: dict) -> None:  # noqa: C901 (long but cohesive)
         merge_cols = [c for c in ["pred_label", "Pred Label", "pred_confidence",
                                    "Pred Confidence", "confidence_valid",
                                    "confidence_invalid", "too_sparse",
-                                   "low_resolution", "had_outliers"]
+                                   "low_resolution"]
                       if c in out_df.columns]
         if merge_cols:
             curve_df = curve_df.merge(out_df[["Test Id"] + merge_cols],

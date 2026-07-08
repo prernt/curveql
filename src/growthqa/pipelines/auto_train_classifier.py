@@ -4,14 +4,11 @@ import shutil
 from pathlib import Path
 
 from growthqa.classifier.train_from_meta import STAGE1_SELECTED_FEATURES, train_from_meta_csv
-
-ROOT = Path(__file__).resolve().parents[3]
+from growthqa.config import TRAIN_META_CSV as DEFAULT_TRAIN_META, MODEL_DIR as DEFAULT_MODELS_DIR
 
 # Retraining always reuses the committed training dataset. The dataset itself
 # (synthetic generation, merge with lab data, preprocessing and feature
 # extraction) is produced once through the CLI and is not rebuilt here.
-DEFAULT_TRAIN_META = ROOT / "data" / "train_data" / "training_meta.csv"
-DEFAULT_MODELS_DIR = ROOT / "classifier_output" / "saved_models_selected"
 
 
 def train_classifier_from_meta_file(
