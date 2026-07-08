@@ -71,7 +71,7 @@ def render_top_controls() -> dict:
                     "Preferred Fit", ["Best Model", "Spline", "Parametric"], index=0, key="auto_preferred_model")
             with c3:
                 auto_response_metric = st.selectbox(
-                    "Response Metric", ["mu", "A", "lag", "integral"], index=0, key="auto_response_metric")
+                    "Response Metric", ["mu", "A", "lambda", "integral"], index=0, key="auto_response_metric")
             with c4:
                 auto_dr_bootstrap = st.selectbox(
                     "DR Bootstrap", ["True", "False"], index=0, key="auto_dr_bootstrap")
@@ -169,8 +169,16 @@ def render_top_controls() -> dict:
 
             fit_map = {"Best Model": "b", "Spline": "s", "Parametric": "m"}
             dr_boot_B_eff = 0 if (auto_mode and auto_dr_bootstrap == "False") else int(dr_boot_B)
-            _sm_gc = None if not override_smoothing else (float(smooth_gc_val) or None)
-            _sm_dr = None if not override_smoothing else (float(smooth_dr_val) or None)
+            # _sm_gc = None if not override_smoothing else (float(smooth_gc_val) or None)
+            # _sm_dr = None if not override_smoothing else (float(smooth_dr_val) or None)
+            if override_smoothing and smooth_gc_val <= 0.0:
+                st.warning("Override smoothing is on but smooth.gc is still 0.0 (not a valid value, "
+                           "valid range is (0, 1]) -- falling back to AUTO for GC. Set a value > 0 to override.")
+            if override_smoothing and smooth_dr_val <= 0.0:
+                st.warning("Override smoothing is on but smooth.dr is still 0.0 (not a valid value, "
+                           "valid range is (0, 1]) -- falling back to AUTO for DR. Set a value > 0 to override.")
+            _sm_gc = float(smooth_gc_val) if (override_smoothing and smooth_gc_val > 0.0) else None
+            _sm_dr = float(smooth_dr_val) if (override_smoothing and smooth_dr_val > 0.0) else None
 
             grofit_opts = GrofitOptions(
                 response_var   = response_var,

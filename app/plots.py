@@ -220,9 +220,20 @@ def make_dr_plot(payload: dict, *, show_bootstrap: bool) -> go.Figure:
                                  fill="tonexty", fillcolor="rgba(128,0,128,0.36)",
                                  showlegend=True, name="Bootstrap band", hoverinfo="skip"))
 
+    def _axis_label(base: str, transform: str | None) -> str:
+        t = str(transform or "").strip().lower()
+        if t in {"log10", "log"}:
+            return f"log10({base})"
+        if t == "log1p":
+            return f"log1p({base})"
+        return base
+
+    x_label = _axis_label("Concentration", payload.get("x_transform"))
+    y_label = _axis_label(payload.get("metric", "response"), payload.get("y_transform"))
+
     fig.update_layout(
-        xaxis_title="Concentration",
-        yaxis_title=payload.get("metric", "response"),
+        xaxis_title=x_label,
+        yaxis_title=y_label,
         height=420, margin=dict(l=30, r=10, t=30, b=40),
         legend=dict(orientation="h", yanchor="top", y=-0.15,
                     xanchor="center", x=0.5, bgcolor="rgba(255,255,255,0.5)"),

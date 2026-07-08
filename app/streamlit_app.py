@@ -238,6 +238,12 @@ if run:
             grofit_tidy_all["pred_confidence"] = pd.to_numeric(
                 grofit_tidy_all["curve_id"].map(conf_map), errors="coerce")
             
+            # Valid curves are always fit-eligible, independent of any export
+            # filter -- Unsure/Invalid can only be ADDED on top, never used to
+            # exclude Valid curves. Kept consistent with the DR export-side
+            # filtering in app/data.py's build_export_zip (see comment there).
+
+
             fit_eligible_labels = {"Valid"}
             if bool(export_dr_include_unsure):
                 fit_eligible_labels.add("Unsure")

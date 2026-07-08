@@ -444,8 +444,8 @@ def render_results(results: dict) -> None:  # noqa: C901 (long but cohesive)
                     )
                     gc_bs = st.selectbox("GC Bootstrap", ["False", "True"],
                                          index=_safe_idx(["False","True"], "exit_gc_bootstrap", "False"))
-                    rm    = st.selectbox("Response Metric", ["mu","A","lag","integral"],
-                                         index=_safe_idx(["mu","A","lag","integral"], "exit_response_metric", "mu"))
+                    rm    = st.selectbox("Response Metric", ["mu","A","lambda","integral"],
+                                         index=_safe_idx(["mu","A","lambda","integral"], "exit_response_metric", "mu"))
                 with d2:
                     pf    = st.selectbox("Preferred Fit", ["Best Model","Spline","Parametric"],
                                          index=_safe_idx(["Best Model","Spline","Parametric"], "exit_preferred_model", "Best Model"))

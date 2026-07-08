@@ -287,4 +287,4 @@ def extract_grofit_params_from_curve(
     integral = float(np.trapezoid(y_grid, t_grid)) if hasattr(np, "trapezoid") else float(np.trapz(y_grid, t_grid))
     # Use the parameter A directly if available, else fall back to geometric
     A_est = extract_A_from_params(model_name, params) if params is not None else float(np.nanmax(y_grid) - y0_geo)
-    return {"mu": mu, "lag": lag, "A": A_est, "integral": integral}
+    return {"mu": mu, "lambda": lag, "A": A_est, "integral": integral}

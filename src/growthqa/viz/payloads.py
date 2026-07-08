@@ -117,7 +117,7 @@ def _param_payload(t: np.ndarray, y: np.ndarray) -> dict:
         "y_hat": y_hat,
         "params": {
             "mu": float(derived.get("mu", np.nan)),
-            "lambda": float(derived.get("lag", np.nan)),
+            "lambda": float(derived.get("lambda", np.nan)),
             "A": float(derived.get("A", np.nan)),
             "integral": float(derived.get("integral", np.nan)),
         },
@@ -309,6 +309,8 @@ def build_dr_payload(
     if not rows:
         return {
             "metric": response_metric,
+            "x_transform": dr_x_transform,
+            "y_transform": dr_y_transform,
             "x_conc": [],
             "y_metric": [],
             "fit": {"x_grid": [], "y_hat": []},
@@ -383,6 +385,8 @@ def build_dr_payload(
 
     dr_payload = {
         "metric": response_metric,
+        "x_transform": dr_x_transform,
+        "y_transform": dr_y_transform,
         "x_conc": x,
         "y_metric": y,
         "labels_used": label_source,

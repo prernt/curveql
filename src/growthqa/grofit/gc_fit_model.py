@@ -244,7 +244,7 @@ def gc_fit_model(t: np.ndarray, y: np.ndarray) -> FitResult:
             y0_geo   = float(np.nanmean(y_grid[:3]))
             derived  = {
                 "mu":       ana_mu,
-                "lag":      ana_lam,
+                "lambda":      ana_lam,
                 "A":        A_out,
                 "integral": integral,
             }
@@ -266,7 +266,7 @@ def gc_fit_model(t: np.ndarray, y: np.ndarray) -> FitResult:
             model=name,
             success=True,
             message="ok",
-            lag=float(derived["lag"]),
+            lag=float(derived["lambda"]),
             mu=float(derived["mu"]),
             A=float(derived["A"]),
             integral=float(derived["integral"]),

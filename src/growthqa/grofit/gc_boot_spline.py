@@ -39,7 +39,7 @@ def gc_boot_spline(
     if n < 6:
         return {"success": False, "message": "Need >=6 points for bootstrap", "n": n}
 
-    stats = {"A": [], "mu": [], "lag": [], "integral": []}
+    stats = {"A": [], "mu": [], "lambda": [], "integral": []}
 
     resolved_lam = spline_s
     if smooth is not None and resolved_lam is None:
@@ -112,7 +112,7 @@ def gc_boot_spline(
         if fit.success:
             stats["A"].append(fit.A)
             stats["mu"].append(fit.mu)
-            stats["lag"].append(fit.lag)
+            stats["lambda"].append(fit.lag)
             stats["integral"].append(fit.integral)
 
     def summarize(arr):

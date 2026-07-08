@@ -289,6 +289,18 @@ def build_export_zip(
     dr_fit_out, dr_boot_out = dr_fit.copy(), dr_boot.copy()
     dr_audit_out = dr_audit.copy() if isinstance(dr_audit, pd.DataFrame) else pd.DataFrame()
 
+    # Dose-response curves ALWAYS include Valid curves, independent of the
+    # main "Export Curve Labels" filter above (which only governs the
+    # curve-level gc_fit / gc_boot / gc_audit export). This is intentional:
+    # a dose-response relationship needs its Valid baseline regardless of
+    # what the user is choosing to inspect at the curve level, so setting
+    # export_label_filter="Invalid" to focus the curve-level export on
+    # problem curves must not silently drop Valid curves out of the DR fit.
+    # export_dr_include_unsure / export_dr_include_invalid only ever ADD
+    # Unsure/Invalid curves on top of the always-included Valid set; there
+    # is deliberately no way to exclude Valid curves from DR.
+
+
     dr_allowed_ids: list[str] = []
     if isinstance(classifier_df, pd.DataFrame) and not classifier_df.empty and "Test Id" in classifier_df.columns:
         lcol = next((c for c in label_candidates if c in classifier_df.columns), None)

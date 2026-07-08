@@ -14,7 +14,7 @@ from growthqa.grofit.dr_boot_spline import dr_boot_spline
 from growthqa.grofit.interactive import apply_user_exclusion, UserFilterFn
 from growthqa.grofit.export import export_results_zip
 
-ResponseVar = Literal["A", "mu", "lag", "integral"]
+ResponseVar = Literal["A", "mu", "lambda", "integral"]
 FitOpt = Literal["m", "s", "b"]
 DrFitMethod = Literal["auto", "spline", "4pl"]
 PIPELINE_VERSION = "1.1.0"
@@ -108,6 +108,16 @@ GC_AUDIT_COLS: list[str] = [
     "aic.gompertz",
     "aic.richards",
     "aic.modified_gompertz",
+    # per-model selection status: "ok" (eligible), "bounds" (fit converged but
+    # hit a parameter bound and was excluded even if its AIC looks best --
+    # this is what makes aic.model sometimes NOT equal to the minimum of the
+    # four aic.* columns above, and what delta.aic.second being negative
+    # actually means), "no_start" (no usable starting values), "exception"
+    # (the fit raised/failed outright).
+    "status.logistic",
+    "status.gompertz",
+    "status.richards",
+    "status.modified_gompertz",
     # winning-model AIC/BIC summary
     "aic.model",            # AIC of the winning parametric model
     "bic.model",            # BIC of the winning parametric model
@@ -202,7 +212,7 @@ def _ensure_columns(df: pd.DataFrame, cols: list[str]) -> None:
 def _response_col_map(response_var: ResponseVar) -> dict[str, str]:
     if response_var == "mu":
         return {"param": "mu.model", "spline": "mu.spline"}
-    if response_var == "lag":
+    if response_var == "lambda":
         return {"param": "lambda.model", "spline": "lambda.spline"}
     if response_var == "A":
         return {"param": "A.para", "spline": "A.nonpara"}
@@ -365,7 +375,7 @@ def run_grofit_pipeline(
             "n.obs":          n_obs,
             # parametric
             "mu.model":       _v(pfit, "mu"),
-            "lambda.model":   _v(pfit, "lag"),
+            "lambda.model":   _v(pfit, "lambda"),
             "A.para":         _v(pfit, "A"),
             "Integral.model": _v(pfit, "integral"),
             "mu.se":          mu_se,
@@ -373,7 +383,7 @@ def run_grofit_pipeline(
             "A.se":           A_se,
             # spline
             "mu.spline":       _v(sfit, "mu"),
-            "lambda.spline":   _v(sfit, "lag"),
+            "lambda.spline":   _v(sfit, "lambda"),
             "A.nonpara":       _v(sfit, "A"),
             "integral.spline": _v(sfit, "integral"),
             # bootstrap CIs — placeholders filled below after gc_boot is built
@@ -392,6 +402,8 @@ def run_grofit_pipeline(
             "fail.reason.model":  getattr(pfit, "fail_reason", None)      if pfit else None,
         })
         _aic_by_model = {row["model"]: row.get("aic", np.nan) for row in ex.get("aic_table", [])}
+        _status_by_model = {row["model"]: row.get("status", "unknown") for row in ex.get("aic_table", [])}
+
         # ── GC_AUDIT row ────────────────────────────────────────────────────
         gc_audit_rows.append({
             "test.id":       test_id,
@@ -402,6 +414,15 @@ def run_grofit_pipeline(
             "aic.gompertz": _aic_by_model.get("gompertz", np.nan),
             "aic.richards": _aic_by_model.get("richards", np.nan),
             "aic.modified_gompertz": _aic_by_model.get("modified_gompertz", np.nan),
+            # per-model status: "ok" / "bounds" / "no_start" / "exception" --
+            # a model can show the numerically lowest AIC above and still not
+            # be "aic.model" if its status here is not "ok" (see GC_AUDIT_COLS
+            # comment). Read this column before concluding delta.aic.second
+            # looks wrong.
+            "status.logistic": _status_by_model.get("logistic", "unknown"),
+            "status.gompertz": _status_by_model.get("gompertz", "unknown"),
+            "status.richards": _status_by_model.get("richards", "unknown"),
+            "status.modified_gompertz": _status_by_model.get("modified_gompertz", "unknown"),
             # winning-model summary
             "aic.model":         _v(pfit, "aic"),
             "bic.model":         _v(pfit, "bic"),
@@ -438,12 +459,12 @@ def run_grofit_pipeline(
                 "ci90.mu.bt.up":       _bt("mu",       "hi90"),
                 "ci95.mu.bt.lo":       _bt("mu",       "lo"),
                 "ci95.mu.bt.up":       _bt("mu",       "hi"),
-                "lambda.bt":           _bt("lag",      "mean"),
-                "sd.lambda.bt":        _bt("lag",      "sd"),
-                "ci90.lambda.bt.lo":   _bt("lag",      "lo90"),
-                "ci90.lambda.bt.up":   _bt("lag",      "hi90"),
-                "ci95.lambda.bt.lo":   _bt("lag",      "lo"),
-                "ci95.lambda.bt.up":   _bt("lag",      "hi"),
+                "lambda.bt":           _bt("lambda",      "mean"),
+                "sd.lambda.bt":        _bt("lambda",      "sd"),
+                "ci90.lambda.bt.lo":   _bt("lambda",      "lo90"),
+                "ci90.lambda.bt.up":   _bt("lambda",      "hi90"),
+                "ci95.lambda.bt.lo":   _bt("lambda",      "lo"),
+                "ci95.lambda.bt.up":   _bt("lambda",      "hi"),
                 "A.bt":                _bt("A",        "mean"),
                 "sd.A.bt":             _bt("A",        "sd"),
                 "ci90.A.bt.lo":        _bt("A",        "lo90"),
