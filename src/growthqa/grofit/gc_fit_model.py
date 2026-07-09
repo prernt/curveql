@@ -312,7 +312,18 @@ def gc_fit_model(t: np.ndarray, y: np.ndarray) -> FitResult:
 
     # ── AIC table enrichment ──────────────────────────────────────────────────
     best_aic    = best.aic or float("nan")
-    valid_aics  = [r["aic"] for r in aic_table if np.isfinite(r.get("aic", float("nan")))]
+    # Only models with status "ok" were eligible for selection in the first
+    # place (see "if hit_bounds: continue" above) -- a model that hit its
+    # parameter bounds can still have a numerically lower AIC without being a
+    # genuinely valid, comparable fit. Including it here made delta_aic_second
+    # go negative, which reads as "the selection picked the wrong model" even
+    # though it didn't; status.<model> columns in gc_audit.csv already let a
+    # reader check this, but the summary number itself should not be
+    # misleading in the first place.
+    valid_aics = [
+        r["aic"] for r in aic_table
+        if np.isfinite(r.get("aic", float("nan"))) and r.get("status") == "ok"
+    ]
     second_best = float("nan")
     if len(valid_aics) >= 2:
         sv = sorted(valid_aics)

@@ -77,7 +77,8 @@ GC_FIT_COLS: list[str] = [
 
 # ── GC_BOOT ──────────────────────────────────────────────────────────────────
 # Biologist-facing. Mirrors Grofit R gcBootSpline output.
-# sdmu.bt / sdlambda.bt etc. (old Grofit aliases) are intentionally omitted —
+# sdmu.bt / sd
+# .bt etc. (old Grofit aliases) are intentionally omitted —
 # the sd.*.bt naming is used consistently throughout.
 GC_BOOT_COLS: list[str] = [
     "test.id", "add.id", "concentration",
@@ -375,7 +376,7 @@ def run_grofit_pipeline(
             "n.obs":          n_obs,
             # parametric
             "mu.model":       _v(pfit, "mu"),
-            "lambda.model":   _v(pfit, "lambda"),
+            "lambda.model":   _v(pfit, "lag"),
             "A.para":         _v(pfit, "A"),
             "Integral.model": _v(pfit, "integral"),
             "mu.se":          mu_se,
@@ -383,7 +384,7 @@ def run_grofit_pipeline(
             "A.se":           A_se,
             # spline
             "mu.spline":       _v(sfit, "mu"),
-            "lambda.spline":   _v(sfit, "lambda"),
+            "lambda.spline":   _v(sfit, "lag"),
             "A.nonpara":       _v(sfit, "A"),
             "integral.spline": _v(sfit, "integral"),
             # bootstrap CIs — placeholders filled below after gc_boot is built

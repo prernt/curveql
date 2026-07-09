@@ -254,10 +254,7 @@ def build_export_zip(
     def _csv(df: pd.DataFrame) -> bytes:
         return df.to_csv(index=False).encode("utf-8")
 
-    label_candidates = (
-        ["Pred Label", "pred_label", "True Label"] if mode_label == "AUTO"
-        else ["True Label", "Pred Label", "pred_label"]
-    )
+    label_candidates =  ["True Label", "Final Label (S1+S2)"]
     allowed_ids: list[str] = []
     if isinstance(classifier_df, pd.DataFrame) and not classifier_df.empty and "Test Id" in classifier_df.columns:
         lcol = next((c for c in label_candidates if c in classifier_df.columns), None)
@@ -436,7 +433,7 @@ def build_export_zip(
         az.writestr("grofit_input.csv", _csv(grofit_input_df))
         if isinstance(gc_audit_out, pd.DataFrame) and not gc_audit_out.empty and "add.id" in gc_audit_out.columns and isinstance(classifier_df, pd.DataFrame) and not classifier_df.empty and "Test Id" in classifier_df.columns:
             _diag_cols = [c for c in [
-                "n_points_observed", "max_gap_hours", "missing_frac_on_grid", "too_sparse", "low_resolution",
+                "n_points_observed", "max_gap_hours", "missing_frac_on_grid", "too_sparse"
             ] if c in classifier_df.columns]
             if _diag_cols:
                 _diag = classifier_df[["Test Id"] + _diag_cols].drop_duplicates("Test Id")

@@ -22,7 +22,12 @@ from growthqa.pipelines.build_meta_dataset import (
     TRAIN_SMOOTH_WINDOW,
     TRAIN_NORMALIZE,
 )
-from growthqa.config import MIN_POINTS, LOW_RES_THRESHOLD, MAX_GAP_HOURS_OVERRIDE, MISSING_FRAC_OVERRIDE
+from growthqa.config import (
+    MIN_POINTS, MAX_GAP_HOURS_OVERRIDE, MISSING_FRAC_OVERRIDE,
+    LATE_WINDOW_REFERENCE_STEP_HOURS, LATE_WINDOW_MAX_MISSING_FRAC,
+    MIN_LATE_POINTS_FLOOR, MIN_LATE_POINTS_CEILING,
+    MIN_LATE_HOURS_ANCHOR, MIN_LATE_POINTS_FALLBACK_RATE_PER_HOUR,
+)
 from growthqa.preprocess.timegrid import parse_time_from_header, get_sorted_time_columns
 
 # Stage-2 (evidence-based checker)
@@ -76,6 +81,23 @@ def assert_runtime_matches_model(model_path: str) -> None:
             + "\nProceeding anyway; retrain or regenerate models to silence this warning.",
             file=sys.stderr,
         )
+
+def _read_val_balanced_accuracy(model_path: str) -> float | None:
+    """Read the fixed, pre-measured validation-split score written into the
+    model's manifest at training time (see train_from_meta.train_from_meta_csv).
+    Returns None if unavailable (e.g. an older model saved before this field
+    existed), so callers can fall back to equal weighting for that model.
+    """
+    mp = Path(model_path)
+    manifest = mp.with_suffix(".manifest.json")
+    if not manifest.exists():
+        return None
+    try:
+        m = json.loads(manifest.read_text(encoding="utf-8"))
+        v = m.get("val_balanced_accuracy", None)
+        return float(v) if v is not None else None
+    except Exception:
+        return None
 
 def _install_legacy_sklearn_pickle_aliases() -> None:
     """
@@ -458,6 +480,20 @@ def run_label_inference_from_uploaded_wide(
     if "Test Id" not in wide_df.columns:
         raise ValueError("Uploaded canonical wide data must include 'Test Id'.")
 
+    dup_ids = wide_df["Test Id"][wide_df["Test Id"].duplicated(keep=False)]
+    if not dup_ids.empty:
+        examples = sorted(set(dup_ids.astype(str)))[:5]
+        raise ValueError(
+            "Uploaded data contains duplicate 'Test Id' values, which is not "
+            "supported -- each curve in a single upload must have a unique "
+            "Test Id (rename the repeated wells/curves, e.g. 'A01' and "
+            "'A01_2', before re-uploading). Duplicated value(s): "
+            + ", ".join(examples)
+            + (" ..." if len(set(dup_ids.astype(str))) > 5 else "")
+        )
+
+    # full horizon (for Stage-2 evidence)
+
     # full horizon (for Stage-2 evidence)
     wide_raw_df = _attach_curve_key(wide_df.copy())
 
@@ -484,7 +520,6 @@ def run_label_inference_from_uploaded_wide(
             # uploaded curve is preprocessed identically to the training set.
             step=TRAIN_STEP_HOURS,
             min_points=MIN_POINTS,
-            low_res_threshold=LOW_RES_THRESHOLD,
             tmax_hours=TRAIN_TMAX_HOURS,
             blank_subtracted=True,
             clip_negatives=False,
@@ -512,11 +547,53 @@ def run_label_inference_from_uploaded_wide(
         raise FileNotFoundError(f"No trained model found in {model_dir}.")
 
     if model_name == "Average":
-        pipelines = {label: load_model_pipeline(str(path)) for label, path in model_label_map.items()}
+        pipelines = {}
+        for label, path in model_label_map.items():
+            try:
+                pipelines[label] = load_model_pipeline(str(path))
+            except Exception as e:
+                # assert_runtime_matches_model already printed a version-
+                # mismatch warning if versions differ; that warning says
+                # "proceeding anyway", so make that actually true here
+                # instead of letting an unpicklable model (e.g. a genuine
+                # binary format change between sklearn versions) crash the
+                # whole request. Drop this member and continue with the rest.
+                print(
+                    f"Skipping model '{label}' at {path}: failed to load "
+                    f"({type(e).__name__}: {e}). Continuing with remaining "
+                    f"ensemble members.",
+                    file=sys.stderr,
+                )
+        if not pipelines:
+            raise RuntimeError(
+                f"No model in {model_dir} could be loaded in this environment. "
+                "Retrain the classifier here (Train / Refresh Classifier) to "
+                "regenerate models compatible with the installed library versions."
+            )
         per_model_preds = []
         for lbl, pipe in pipelines.items():
-            plabel, pconf, pvalid = predict_hard_with_confidence(pipe, meta_df)
+            try:
+                plabel, pconf, pvalid = predict_hard_with_confidence(pipe, meta_df)
+            except Exception as e:
+                # A model can unpickle successfully and still fail here on a
+                # subtler cross-version incompatibility (e.g. a fitted
+                # SimpleImputer's internal attributes changing name/shape
+                # between sklearn versions). Same handling as a load failure:
+                # skip this member, keep going with the rest.
+                print(
+                    f"Skipping model '{lbl}': loaded but failed to predict "
+                    f"({type(e).__name__}: {e}). Continuing with remaining "
+                    f"ensemble members.",
+                    file=sys.stderr,
+                )
+                continue
             per_model_preds.append((lbl, plabel, pconf, pvalid))
+        if not per_model_preds:
+            raise RuntimeError(
+                f"No model in {model_dir} could produce predictions in this "
+                "environment. Retrain the classifier here (Train / Refresh "
+                "Classifier) to regenerate compatible models."
+            )
         valid_probs_list = []
         for _, plabel, _, pvalid in per_model_preds:
             if np.any(np.isfinite(pvalid)):
@@ -525,19 +602,25 @@ def run_label_inference_from_uploaded_wide(
                 valid_probs_list.append(_labels_to_prob_valid(plabel))
         valid_probs = np.vstack(valid_probs_list)
 
-        # Ensemble weighting (known limitation, kept intentionally):
-        # Each member is weighted by its mean certainty |p - 0.5| measured
-        # over the curves in THIS request, so the weights depend on the batch
-        # uploaded together. An identical curve can therefore receive a
-        # slightly different ensemble probability depending on its companions.
-        # This is documented rather than changed, to keep inference behaviour
-        # stable across the reported experiments.
-        eps = 1e-9
-        p_clipped = np.clip(valid_probs, eps, 1 - eps)
-        model_certainty = np.nanmean(np.abs(p_clipped - 0.5), axis=1)
-        if model_certainty.sum() > 0:
-            model_weights = model_certainty / model_certainty.sum()
+        # Ensemble weighting: each member is weighted by its own FIXED
+        # validation-split balanced accuracy, measured once at training time
+        # and stored in the model's manifest (see train_from_meta_csv /
+        # _read_val_balanced_accuracy). This weight does not depend on the
+        # batch uploaded together, so an identical curve gets the same
+        # ensemble probability regardless of what else is uploaded alongside
+        # it -- fixing the previous batch-composition-dependent behaviour,
+        # where weights were derived from mean prediction certainty over
+        # THIS request's curves.
+        val_scores = np.array(
+            [_read_val_balanced_accuracy(str(model_label_map[lbl])) for lbl, _, _, _ in per_model_preds],
+            dtype=float,
+        )
+        if np.all(np.isfinite(val_scores)) and np.nansum(val_scores) > 0:
+            model_weights = val_scores / np.nansum(val_scores)
         else:
+            # Fall back to equal weighting only if one or more models predate
+            # this manifest field (e.g. legacy artifacts) -- never fall back
+            # to batch-derived certainty.
             model_weights = np.ones(len(valid_probs_list)) / len(valid_probs_list)
 
         avg_valid = np.nansum(valid_probs * model_weights[:, np.newaxis], axis=0)
@@ -576,8 +659,16 @@ def run_label_inference_from_uploaded_wide(
     out_df["S1 Confidence Valid"] = out_df["confidence_valid"]
 
     # ---- Stage-2 evidence computation ----
-    stage2_cfg = Stage2ConfigEvidence(stage2_start=float(stage2_start))
-
+    # stage2_cfg = Stage2ConfigEvidence(stage2_start=float(stage2_start))
+    stage2_cfg = Stage2ConfigEvidence(
+        stage2_start=float(stage2_start),
+        late_window_reference_step_hours=float(LATE_WINDOW_REFERENCE_STEP_HOURS),
+        late_window_max_missing_frac=float(LATE_WINDOW_MAX_MISSING_FRAC),
+        min_late_points_floor=int(MIN_LATE_POINTS_FLOOR),
+        min_late_points_ceiling=int(MIN_LATE_POINTS_CEILING),
+        min_late_hours_anchor=float(MIN_LATE_HOURS_ANCHOR),
+        min_late_points_fallback_rate_per_hour=float(MIN_LATE_POINTS_FALLBACK_RATE_PER_HOUR),
+    )
     stage2_df = _compute_stage2_features_from_wide_evidence(wide_raw_df, cfg=stage2_cfg)
 
     out_df = out_df.merge(

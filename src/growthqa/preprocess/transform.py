@@ -164,9 +164,17 @@ def normalize_curve(y: np.ndarray, mode: str) -> np.ndarray:
     if mode == "MINMAX":
         lo = float(np.nanmin(yy[m]))
         hi = float(np.nanmax(yy[m]))
-        if hi > lo:
+        # A curve that is constant (or constant up to smoothing round-off,
+        # e.g. an SGF-filtered flat well) has a "range" that is not exactly
+        # zero but is at the scale of floating-point noise (~1e-16). Dividing
+        # by that noise-scale range amplifies rounding error into a full
+        # [0, 1] fake signal. Require the range to be meaningful relative to
+        # the curve's own scale before treating it as real variation.
+        scale = max(abs(hi), abs(lo), 1e-12)
+        if (hi - lo) > 1e-9 * scale:
             yy[m] = (yy[m] - lo) / (hi - lo)
-        return yy
+        else:
+            yy[m] = 0.0
     return yy
 
 
@@ -189,7 +197,6 @@ def preprocess_wide(raw_wide: pd.DataFrame,
         "Model Name",
         "Is_Valid",
         "too_sparse",
-        "low_resolution",
         "n_points_observed_raw", 
         "max_gap_hours_raw", 
         "missing_frac_on_grid_raw",

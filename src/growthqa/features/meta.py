@@ -112,8 +112,6 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
         float(_raw_missing) if _raw_missing is not None and pd.notna(_raw_missing) else missing_frac_on_grid_calc
     )
 
-
-    low_res_ctx = bool(row.get("low_resolution", False))
     sparse_ctx = bool(row.get("too_sparse", False))
     grid_resolution_mismatch = (
         (np.isfinite(median_dt_hours) and median_dt_hours > 0.5)
@@ -138,7 +136,6 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
             "n_points_observed": n_points_observed,
             "max_gap_hours": max_gap_hours,
             "missing_frac_on_grid": missing_frac_on_grid,
-            "low_resolution": int(low_res_ctx),
             "too_sparse": int(sparse_ctx),
             "grid_resolution_mismatch": int(grid_resolution_mismatch),
             "initial_OD": np.nan,
@@ -189,7 +186,16 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
         dy = np.array([], dtype=float)
         dt = np.array([], dtype=float)
         slopes = np.array([], dtype=float)
-
+    # NOTE ON SCALE: this `auc` (and `auc_per_hour` below) is computed on `od`,
+    # which by the time it reaches this function has already been through
+    # blank-subtraction, smoothing, and MINMAX normalization to [0, 1] (see
+    # preprocess.transform.preprocess_wide). It is therefore NOT on the same
+    # scale as Grofit's Integral.model / integral.spline, which are computed
+    # on raw OD units (see grofit.gc_fit_model / gc_fit_spline, fed by
+    # infer_labels.wide_original_to_grofit_tidy, which does no normalization).
+    # The two only happen to land in a similar numeric range when a curve's
+    # raw OD span is itself close to 1; do not use one as a validation check
+    # for the other without first rescaling.
     auc_per_hour = float(auc / observed_tmax) if np.isfinite(observed_tmax) and observed_tmax > 0 else np.nan
     net_change_per_hour = (
         float((final_od - initial_od) / observed_tmax)
@@ -314,7 +320,6 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
         "n_points_observed": n_points_observed,
         "max_gap_hours": max_gap_hours,
         "missing_frac_on_grid": missing_frac_on_grid,
-        "low_resolution": int(low_res_ctx),
         "too_sparse": int(sparse_ctx),
         "grid_resolution_mismatch": int(grid_resolution_mismatch),
         "initial_OD": initial_od,

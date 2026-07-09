@@ -57,6 +57,39 @@ def effective_df(sp, x: np.ndarray) -> float:
     except Exception:
         return 2.0
 
+def _estimate_lam_for_target_df(t: np.ndarray, y: np.ndarray, target_df: float, n_search: int = 30) -> float:
+    """Bisection search for a lambda whose fit has effective_df close to
+    target_df. Used only to REPORT an approximate smoothing value when
+    scipy's own GCV (make_smoothing_spline(lam=None)) is used to do the
+    actual fit -- scipy does not expose the lambda it selected internally,
+    so without this the audit-trail 'smooth_used' column is silently NaN
+    for every curve where plain GCV already meets the df floor (in practice,
+    most curves with real structure -- e.g. noisy/diauxic/steep growth
+    curves). This does not change what spline is fit; it only recovers a
+    number worth reporting alongside it.
+    """
+    lam_lo, lam_hi = 1e-12, 1e6
+    try:
+        df_lo = effective_df(make_smoothing_spline(t, y, lam=lam_lo), t)
+        df_hi = effective_df(make_smoothing_spline(t, y, lam=lam_hi), t)
+    except Exception:
+        return float("nan")
+    if not (df_hi <= target_df <= df_lo):
+        # target_df is outside the range spanned by [lam_lo, lam_hi];
+        # return the closer endpoint rather than a meaningless bisection.
+        return lam_lo if abs(df_lo - target_df) < abs(df_hi - target_df) else lam_hi
+    for _ in range(n_search):
+        lam_mid = np.exp(0.5 * (np.log(max(lam_lo, 1e-15)) + np.log(max(lam_hi, 1e-15))))
+        try:
+            df_mid = effective_df(make_smoothing_spline(t, y, lam=lam_mid), t)
+        except Exception:
+            break
+        if df_mid >= target_df:
+            lam_lo = lam_mid
+        else:
+            lam_hi = lam_mid
+    return float(np.exp(0.5 * (np.log(max(lam_lo, 1e-15)) + np.log(max(lam_hi, 1e-15)))))
+
 
 def _find_bounded_lambda(t: np.ndarray, y: np.ndarray, min_df: float, n_search: int = 30) -> float:
     lam_lo, lam_hi = 1e-12, 1e6
@@ -86,8 +119,12 @@ def _select_lam_and_fit(t: np.ndarray, y: np.ndarray, lam: Optional[float], auto
     if auto_cv:
         try:
             sp_gcv = make_smoothing_spline(t, y, lam=None)
-            if effective_df(sp_gcv, t) >= min_df:
-                return sp_gcv, float("nan"), "gcv_ok"
+            achieved_df = effective_df(sp_gcv, t)
+            if achieved_df >= min_df:
+                # sp_gcv is still the actual fit used below; this lambda is
+                # an approximation recovered only so smooth_used isn't blank.
+                lam_est = _estimate_lam_for_target_df(t, y, target_df=achieved_df)
+                return sp_gcv, lam_est, "gcv_ok"
             lam_b = _find_bounded_lambda(t, y, min_df=min_df)
             return make_smoothing_spline(t, y, lam=lam_b), lam_b, "gcv_bounded"
         except Exception:
@@ -213,6 +250,8 @@ def gc_fit_spline(
             warn_list.append("GCV over-smoothed; df floor enforced")
         if lam_method == "fallback":
             warn_list.append("GCV failed; variance-scaled fallback used")
+        if lam_method == "gcv_ok":
+            warn_list.append("smooth_used is an estimate matching GCV's effective_df, not GCV's internal lambda (scipy does not expose it)")
 
         return FitResult(
             method="spline",

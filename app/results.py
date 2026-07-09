@@ -160,8 +160,7 @@ def render_results(results: dict) -> None:  # noqa: C901 (long but cohesive)
         curve_df = review_df.copy()
         merge_cols = [c for c in ["pred_label", "Pred Label", "pred_confidence",
                                    "Pred Confidence", "confidence_valid",
-                                   "confidence_invalid", "too_sparse",
-                                   "low_resolution"]
+                                   "confidence_invalid", "too_sparse"]
                       if c in out_df.columns]
         if merge_cols:
             curve_df = curve_df.merge(out_df[["Test Id"] + merge_cols],
@@ -556,8 +555,7 @@ def render_results(results: dict) -> None:  # noqa: C901 (long but cohesive)
 
             render_metric_row("Too Sparse",
                               _fmt_val(bool(out_row.get("too_sparse")) if "too_sparse" in out_row else "NA"))
-            render_metric_row("Low Resolution",
-                              _fmt_val(bool(out_row.get("low_resolution")) if "low_resolution" in out_row else "NA"))
+
             render_metric_row("Blank subtraction mode",
                               _fmt_val("RAW (applied)" if settings.input_is_raw
                                        else "ALREADY BLANK SUBTRACTED (so not applied)"))

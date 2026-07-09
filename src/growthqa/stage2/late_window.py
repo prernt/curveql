@@ -35,8 +35,16 @@ class Stage2ConfigEvidence:
     """
     stage2_start: float = 16.0
 
-    # Quality gate
-    min_late_points: int = 5
+    # Quality gate: NOT a fixed point count. The actual per-curve floor is
+    # derived from how densely THIS curve was sampled in its own early
+    # (pre-stage2_start) window -- see _dynamic_min_late_points(). These four
+    # values parameterize that derivation; see config.py for the rationale
+    # and calibration note. A curve on the canonical 0.5h grid reproduces
+    # the old fixed default of 5 exactly.
+    min_late_points_floor: int = 3
+    min_late_points_ceiling: int = 10
+    min_late_hours_anchor: float = 2.5
+    min_late_points_fallback_rate_per_hour: float = 2.0
     quality_threshold: float = 0.30
 
     # Evidence thresholds
@@ -54,6 +62,10 @@ class Stage2ConfigEvidence:
     # Small numeric safeties
     min_noise_level: float = 0.005           # OD units (robust floor)
     eps_dt: float = 1e-9
+    late_coverage_ok: bool = False  # True iff BOTH the curve's own dynamic
+                                     # point-count floor AND the density gate
+                                     # (late_window_reference_step_hours /
+                                     # late_window_max_missing_frac) are satisfied
 
     def to_dict(self) -> dict[str, float | int]:
         return asdict(self)
@@ -281,12 +293,52 @@ def compute_artifact_score(
 
 
 # ----------------------------
+# Dynamic min_late_points (density-derived, not a fixed constant)
+# ----------------------------
+def _dynamic_min_late_points(t_early: np.ndarray, cfg: Stage2ConfigEvidence) -> int:
+    """
+    How many late-window points to require before trusting Stage-2 evidence,
+    derived from how densely THIS curve was actually sampled before
+    stage2_start -- not a fixed constant shared by every curve.
+
+    Rationale: a fixed floor (e.g. 5) treats a curve sampled only every ~2h
+    the same as one sampled every ~0.25h, even though the first could never
+    realistically produce many late points and the second could easily
+    produce far more if genuinely monitored further. Anchoring to the
+    curve's own early sampling rate means the floor scales with what this
+    curve's own protocol could actually deliver.
+
+    early_rate_per_hour = (n_early - 1) / early_span_hours, i.e. the curve's
+    own observed points-per-hour before stage2_start. Falls back to
+    cfg.min_late_points_fallback_rate_per_hour (matching the canonical 0.5h
+    grid, 2 points/hour) when the early window has too few points to
+    estimate a rate at all.
+    """
+    t_early = np.asarray(t_early, dtype=float)
+    t_early = t_early[np.isfinite(t_early)]
+
+    if t_early.size >= 2:
+        t_early = np.sort(t_early)
+        early_span_hours = float(t_early[-1] - t_early[0])
+        if early_span_hours > 0:
+            early_rate_per_hour = (t_early.size - 1) / early_span_hours
+        else:
+            early_rate_per_hour = cfg.min_late_points_fallback_rate_per_hour
+    else:
+        early_rate_per_hour = cfg.min_late_points_fallback_rate_per_hour
+
+    raw = int(round(early_rate_per_hour * cfg.min_late_hours_anchor))
+    return int(np.clip(raw, cfg.min_late_points_floor, cfg.min_late_points_ceiling))
+
+
+# ----------------------------
 # Data quality score
 # ----------------------------
 def compute_data_quality(
     t_late: np.ndarray,
     y_late: np.ndarray,
     cfg: Stage2ConfigEvidence,
+    min_late_points_dynamic: int,
 ) -> float:
     """
     Quality score in [0,1].
@@ -301,14 +353,14 @@ def compute_data_quality(
     m = np.isfinite(t) & np.isfinite(y)
     t, y = t[m], y[m]
 
-    if t.size < cfg.min_late_points:
+    if t.size < min_late_points_dynamic:
         return 0.0
 
     # Sort
     idx = np.argsort(t)
     t, y = t[idx], y[idx]
 
-    size_quality = min(1.0, t.size / max(2 * cfg.min_late_points, 1))
+    size_quality = min(1.0, t.size / max(2 * min_late_points_dynamic, 1))
     span = float(t[-1] - t[0])
     span_quality = min(1.0, span / 4.0)  # prefer >=4h late span
     finite_quality = 1.0  # already filtered finite
@@ -335,7 +387,12 @@ def compute_evidence_scores(
     m = np.isfinite(t_all) & np.isfinite(y_all)
     t_all, y_all = t_all[m], y_all[m]
 
-    if t_all.size < cfg.min_late_points:
+    if t_all.size < cfg.min_late_points_floor:
+        # Not enough data anywhere in the curve to do anything meaningful --
+        # a pure sanity floor, checked before the early/late split, so it
+        # can't yet use the density-derived threshold below (that needs the
+        # early window identified first). cfg.min_late_points_floor is the
+        # absolute minimum this ever requires, regardless of density.
         return EvidenceScores(
             growth_z_like=0.0,
             artifact_score=0.5,

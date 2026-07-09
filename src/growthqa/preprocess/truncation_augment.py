@@ -153,7 +153,7 @@ def augment_raw_wide(
     meaning across files with different native resolutions. Horizon
     MASKING uses each curve's real native timestamps directly.
 
-    Deliberately does not compute too_sparse / low_resolution / the raw
+    Deliberately does not compute too_sparse / the raw
     sparsity diagnostics here — build_raw_merged() computes those fresh,
     per truncated variant, once base_curve_id/aug_id are present as
     grouping keys (see interpolate._get_meta_cols).

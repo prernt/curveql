@@ -50,7 +50,6 @@ FINAL_ID_COLS = [
     "train_horizon",
     "is_censored",
     "too_sparse",
-    "low_resolution",
     "n_points_observed_raw",
     "max_gap_hours_raw",
     "missing_frac_on_grid_raw",
@@ -81,7 +80,6 @@ def run_merge_preprocess_meta(
     # interpolation/grid
     step: float = 0.5,
     min_points: int = 3,
-    low_res_threshold: int = 7,
     tmax_hours: Optional[float] = 16.0,
     # blank/baseline
     blank_subtracted: bool = False,
@@ -128,7 +126,6 @@ def run_merge_preprocess_meta(
         df_in,
         step_hours=step,
         min_points=min_points,
-        low_res_threshold=low_res_threshold,
         tmax_hours=tmax_hours,
     )
 
@@ -197,7 +194,6 @@ def run_merge_preprocess_meta(
             combined_raw_df,
             step_hours=step,
             min_points=min_points,
-            low_res_threshold=low_res_threshold,
             tmax_hours=tmax_hours,
         )
     else:

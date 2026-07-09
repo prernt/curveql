@@ -20,7 +20,6 @@ AUDIT_META_FEATURES: list[str] = [
     "max_gap_hours",
     "missing_frac_on_grid",
     "too_sparse",
-    "low_resolution",
     "grid_resolution_mismatch",
     "auc_per_hour",
     "net_change_per_hour",

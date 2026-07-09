@@ -107,9 +107,38 @@ def build_model_matrix(meta: pd.DataFrame, label_col: str) -> Tuple[pd.DataFrame
         raise ValueError("No numeric training features found after dropping identifier/leakage columns.")
     feature_cols = list(X.columns)
 
-    eval_cols = [c for c in ["source_type", "train_horizon", "is_censored", "too_sparse", "low_resolution"] if c in df.columns]
+    eval_cols = [c for c in ["source_type", "train_horizon", "is_censored", "too_sparse"] if c in df.columns]
     eval_df = df[eval_cols].copy() if eval_cols else pd.DataFrame(index=df.index)
     return X, y, groups, feature_cols, eval_df
+
+def _retire_previous_run_artifacts(art_dir: Path) -> List[str]:
+    """Delete model/manifest/feature/threshold/results files left behind by
+    earlier training runs in this directory.
+
+    discover_models() in infer_labels.py picks up every *.joblib file it
+    finds in MODEL_DIR, keyed by filename; run_tag-suffixed filenames mean
+    old and new runs never collide on disk, so without this cleanup step
+    every "Train / Refresh Classifier" click ADDS a new set of models next
+    to the old ones instead of replacing them, and the "Average" ensemble
+    silently grows (3 models -> 6 -> 9 -> ...), mixing predictions from
+    stale, superseded models into every inference call.
+    """
+    patterns = [
+        "*_selected_pipeline_*.joblib",
+        "*_selected_pipeline_*.manifest.json",
+        "selected_features_*.json",
+        "thresholds_*.json",
+        "train_results_selected_*.csv",
+    ]
+    removed = []
+    for pattern in patterns:
+        for f in art_dir.glob(pattern):
+            try:
+                f.unlink()
+                removed.append(str(f))
+            except OSError:
+                pass
+    return removed
 
 
 def build_models() -> Dict[str, Pipeline]:
@@ -172,7 +201,7 @@ def _slice_metrics(df_eval: pd.DataFrame, y_true: pd.Series, y_pred: np.ndarray,
     base.update({"model": model, "split": split, "slice_col": "overall", "slice_val": "all", "n": int(len(y_true))})
     rows.append(base)
 
-    for col in ["source_type", "train_horizon", "is_censored", "too_sparse", "low_resolution"]:
+    for col in ["source_type", "train_horizon", "is_censored", "too_sparse"]:
         if col not in df_eval.columns:
             continue
         vals = df_eval[col]
@@ -264,10 +293,15 @@ def train_from_meta_csv(
     run_tag: str | None = None,
     write_lockfile: bool = True,
     selected_features: List[str] | None = None,
+    retire_previous_runs: bool = True,
 ) -> dict:
     meta_csv = Path(meta_csv)
     art_dir = Path(art_dir)
     art_dir.mkdir(parents=True, exist_ok=True)
+
+    retired_files: List[str] = []
+    if retire_previous_runs:
+        retired_files = _retire_previous_run_artifacts(art_dir)
 
     meta = pd.read_csv(meta_csv)
     label_col = detect_label_col(meta)
@@ -295,6 +329,16 @@ def train_from_meta_csv(
     if run_tag is None:
         run_tag = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+    # Fixed, pre-measured per-model quality score, taken from the VAL split
+    # (never the test split, and never anything computed from an uploaded
+    # batch). This is what ensemble weighting at inference time should use
+    # instead of "how certain did each model sound on today's upload" --
+    # see infer_labels.run_label_inference_from_uploaded_wide.
+    val_overall = results[(results["split"] == "val") & (results["slice_col"] == "overall")]
+    val_balanced_acc_by_model = {
+        row["model"]: float(row["balanced_acc"]) for _, row in val_overall.iterrows()
+    }
+
     model_paths = {}
     manifest_paths = {}
     for name, model in fitted.items():
@@ -307,6 +351,7 @@ def train_from_meta_csv(
                 extra={
                     "feature_columns": feature_cols,
                     "group_split_col": "base_curve_id" if "base_curve_id" in meta.columns else "Test Id",
+                    "val_balanced_accuracy": val_balanced_acc_by_model.get(name, None),
                 },
             )
         )
@@ -344,8 +389,76 @@ def train_from_meta_csv(
             "val": int(len(val_idx)),
             "test": int(len(test_idx)),
         },
+        "retired_previous_run_files": retired_files,
+
     }
 
+def evaluate_split_stability(
+    *,
+    meta_csv: str | Path = TRAIN_META_CSV,
+    seeds: List[int] = [42, 43, 44, 45, 46],
+    selected_features: List[str] | None = None,
+    tmp_root: str | Path = "/tmp/growthqa_split_stability",
+) -> pd.DataFrame:
+    """Retrain across several RANDOM_STATE values and report how much the
+    reported test-split metrics move around, instead of trusting the single
+    currently-saved split.
+
+    A single train/val/test split is one random draw of which curves end up
+    in the test set; the reported accuracy for that one draw is not, by
+    itself, evidence of how the model performs in general. This retrains the
+    whole pipeline (data split + model fit + evaluation) once per seed in
+    `seeds`, using a throwaway artifact directory each time (nothing here
+    touches the model files an app / thesis run is currently pointed at),
+    and returns one row per (model, seed) with the overall test-split
+    metrics, plus a summary with mean/std/min/max per model.
+
+    Use this to report e.g. "balanced accuracy: 0.83 +/- 0.02 (n=5 seeds)"
+    in the thesis instead of a single point estimate.
+    """
+    tmp_root = Path(tmp_root)
+    rows = []
+    original_seed = RANDOM_STATE
+    try:
+        for i, seed in enumerate(seeds):
+            globals()["RANDOM_STATE"] = seed  # build_models() / _group_split() read this at call time
+            art_dir = tmp_root / f"seed_{seed}_{i}"
+            train_from_meta_csv(
+                meta_csv=meta_csv,
+                art_dir=art_dir,
+                run_tag=f"stability_{seed}_{i}",
+                write_lockfile=False,
+                selected_features=selected_features,
+            )
+            summary = pd.read_csv(art_dir / f"train_results_selected_stability_{seed}_{i}.csv")
+            test_overall = summary[(summary["split"] == "test") & (summary["slice_col"] == "overall")].copy()
+            test_overall["seed"] = seed
+            rows.append(test_overall)
+    finally:
+        globals()["RANDOM_STATE"] = original_seed
+
+    all_runs = pd.concat(rows, ignore_index=True)
+
+    summary_rows = []
+    for model_name, grp in all_runs.groupby("model"):
+        for metric in ["balanced_acc", "precision", "recall", "f1", "roc_auc"]:
+            if metric not in grp.columns:
+                continue
+            summary_rows.append({
+                "model": model_name,
+                "metric": metric,
+                "mean": float(grp[metric].mean()),
+                "std": float(grp[metric].std(ddof=1)),
+                "min": float(grp[metric].min()),
+                "max": float(grp[metric].max()),
+                "n_seeds": int(len(grp)),
+            })
+    stability_summary = pd.DataFrame(summary_rows)
+
+    import shutil
+    shutil.rmtree(tmp_root, ignore_errors=True)
+
+    return stability_summary
 
 if __name__ == "__main__":
     main()

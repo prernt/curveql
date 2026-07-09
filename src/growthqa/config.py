@@ -48,7 +48,6 @@ RANDOM_STATE = 42
 STEP_HOURS = 0.5
 TMAX_HOURS = 16.0
 MIN_POINTS = 3
-LOW_RES_THRESHOLD = 7
 SMOOTH_METHOD = "SGF"
 SMOOTH_WINDOW = 5
 NORMALIZE = "MINMAX"
@@ -110,7 +109,7 @@ MISSING_FRAC_OVERRIDE = 0.85
 # ---------------------------------------------------------------------------
 # The deliberate, documented search space for feature selection -- NOT the
 # same thing as "every numeric column build_model_matrix happens to leave
-# after dropping identifiers". too_sparse / low_resolution /
+# after dropping identifiers". too_sparse /
 # grid_resolution_mismatch are excluded here even though build_model_matrix
 # would otherwise include them, because they are constant by design on any
 # training corpus (they only vary on genuinely sparse real-world uploads at
@@ -206,3 +205,55 @@ IDENTIFIER_COLS = {
     "gap_pattern",
 }
 LEAKAGE_COLS = {"best_model_name"}
+
+# ---------------------------------------------------------------------------
+# Stage 2 late-window density gate (companion to min_late_points)
+# ---------------------------------------------------------------------------
+# min_late_points (Stage2ConfigEvidence, default 5) is a flat count of raw
+# observations after stage2_start. That treats 5 points squeezed into a
+# 2-hour late window identically to 5 points thinly spread across a 42-hour
+# late window, even though the second case has ~20x less information per
+# hour and is far more likely to miss real dynamics (e.g. a late decline)
+# entirely between samples. LATE_WINDOW_REFERENCE_STEP_HOURS sets the
+# sampling density Stage 2 expects in the late window ("at least one point
+# roughly every N hours") to consider it well-covered; LATE_WINDOW_MAX_MISSING_FRAC
+# is the ceiling on how much of that expected density can be missing before
+# has_late_data is withheld even though min_late_points is satisfied.
+#
+# ---------------------------------------------------------------------------
+# Stage 2 late-window density gates
+# ---------------------------------------------------------------------------
+# Two companion gates, both duration/density-aware rather than flat counts:
+#
+# 1) LATE_WINDOW_REFERENCE_STEP_HOURS / LATE_WINDOW_MAX_MISSING_FRAC -- is
+#    the late window itself densely enough sampled relative to its own span
+#    ("at least one point roughly every N hours")? Treats 5 points squeezed
+#    into a 2-hour late window differently from 5 points thinly spread
+#    across a 42-hour one, even though a flat point count alone would not.
+#
+# 2) MIN_LATE_POINTS_FLOOR / MIN_LATE_POINTS_CEILING / MIN_LATE_HOURS_ANCHOR /
+#    MIN_LATE_POINTS_FALLBACK_RATE_PER_HOUR -- how many late points should be
+#    required at all, before trusting Stage 2's evidence math? A single flat
+#    number (e.g. 5) applied to every curve ignores how densely THAT curve
+#    was actually sampled before stage2_start: a curve sampled every ~2h was
+#    never going to produce many late points even if genuinely monitored
+#    further, while a curve sampled every ~0.25h could easily produce far
+#    more. Instead, the required count is derived from the curve's OWN
+#    observed early-window sampling rate (points/hour before stage2_start):
+#        required = round(early_rate_per_hour * MIN_LATE_HOURS_ANCHOR)
+#    clipped to [MIN_LATE_POINTS_FLOOR, MIN_LATE_POINTS_CEILING]. Calibrated
+#    so a curve sampled on the canonical 0.5h grid (rate = 2 points/hour)
+#    reproduces the old fixed default of 5 exactly (2 * 2.5 = 5) -- a
+#    strict generalization, not a change of behaviour, for the common case.
+#    MIN_LATE_POINTS_FALLBACK_RATE_PER_HOUR (also 2.0, matching the
+#    canonical grid) is used only when the early window itself has too few
+#    points to estimate a rate at all. See
+#    stage2.late_window._dynamic_min_late_points().
+
+LATE_WINDOW_REFERENCE_STEP_HOURS = 1.0
+LATE_WINDOW_MAX_MISSING_FRAC = 0.85
+
+MIN_LATE_POINTS_FLOOR = 3
+MIN_LATE_POINTS_CEILING = 10
+MIN_LATE_HOURS_ANCHOR = 2.5
+MIN_LATE_POINTS_FALLBACK_RATE_PER_HOUR = 2.0

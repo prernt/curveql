@@ -33,7 +33,6 @@ from growthqa.config import (
     TRAIN_META_CSV as TRAIN_META,
     STEP_HOURS as _STEP_HOURS,
     MIN_POINTS as _MIN_POINTS,
-    LOW_RES_THRESHOLD as _LOW_RES_THRESHOLD,
     TMAX_HOURS as _TMAX_HOURS,
     SMOOTH_METHOD as _SMOOTH_METHOD,
     SMOOTH_WINDOW as _SMOOTH_WINDOW,
@@ -57,7 +56,6 @@ class InferenceSettings:
     # identically to the training set.
     step: float                = _STEP_HOURS
     min_points: int            = _MIN_POINTS
-    low_res_threshold: int     = _LOW_RES_THRESHOLD
     auto_tmax: bool            = False
     auto_tmax_coverage: float  = 0.8
     tmax_hours: float | None   = _TMAX_HOURS

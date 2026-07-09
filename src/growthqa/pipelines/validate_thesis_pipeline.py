@@ -49,7 +49,6 @@ def run_validation(inputs: list[str]) -> None:
             "n_points_observed",
             "max_gap_hours",
             "missing_frac_on_grid",
-            "low_resolution",
             "too_sparse",
             "grid_resolution_mismatch",
             "initial_OD",
