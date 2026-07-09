@@ -348,7 +348,7 @@ def _compute_stage2_features_from_wide_evidence(
 
         ev = compute_evidence_scores(row_raw, time_cols, cfg)
 
-        has_late = bool(ev.n_late_points >= cfg.min_late_points)
+        has_late = bool(ev.late_coverage_ok)
 
         rows.append(
             {

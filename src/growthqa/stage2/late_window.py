@@ -47,6 +47,17 @@ class Stage2ConfigEvidence:
     min_late_points_fallback_rate_per_hour: float = 2.0
     quality_threshold: float = 0.30
 
+    # Late-window density gate (companion to the dynamic point-count floor
+    # above): the floor alone treats N late points squeezed into a short
+    # late window the same as N points thinly spread across a much longer
+    # one, even though the second has far less information per hour.
+    # late_window_reference_step_hours sets the sampling density expected in
+    # the late window ("about one point every N hours"); late_window_max_missing_frac
+    # caps how much of that expected density can be missing before coverage
+    # is withheld even though the point-count floor is satisfied.
+    late_window_reference_step_hours: float = 1.0
+    late_window_max_missing_frac: float = 0.85
+
     # Evidence thresholds
     growth_z_threshold: float = 2.0          # "2-sigma" style threshold (z-like)
     artifact_score_threshold: float = 0.70   # high artifact severity
@@ -62,10 +73,7 @@ class Stage2ConfigEvidence:
     # Small numeric safeties
     min_noise_level: float = 0.005           # OD units (robust floor)
     eps_dt: float = 1e-9
-    late_coverage_ok: bool = False  # True iff BOTH the curve's own dynamic
-                                     # point-count floor AND the density gate
-                                     # (late_window_reference_step_hours /
-                                     # late_window_max_missing_frac) are satisfied
+    
 
     def to_dict(self) -> dict[str, float | int]:
         return asdict(self)
@@ -95,6 +103,11 @@ class EvidenceScores:
     noise_level: float = np.nan
     n_late_points: int = 0
     late_span_hours: float = np.nan
+    late_coverage_ok: bool = False  # True iff BOTH the curve's own dynamic
+                                     # point-count floor AND the density gate
+                                     # (late_window_reference_step_hours /
+                                     # late_window_max_missing_frac) are satisfied
+
 
 # ----------------------------
 # Helpers (robust statistics)
@@ -403,6 +416,7 @@ def compute_evidence_scores(
         )
 
     # Sort
+# Sort
     idx = np.argsort(t_all)
     t_all, y_all = t_all[idx], y_all[idx]
 
@@ -414,7 +428,33 @@ def compute_evidence_scores(
     y_late = y_all[late_mask]
 
     n_late = int(np.isfinite(y_late).sum())
-    if n_late < cfg.min_late_points or t_late.size < cfg.min_late_points:
+    span = float(np.nanmax(t_late) - np.nanmin(t_late)) if t_late.size > 0 else np.nan
+
+    # min_late_points is NOT a fixed constant: it's derived from how densely
+    # THIS curve was actually sampled in its own early (pre-stage2_start)
+    # window. See _dynamic_min_late_points() for the rationale.
+    min_late_points_dynamic = _dynamic_min_late_points(t_all[early_mask], cfg)
+
+    # Duration-aware density gate, companion to the dynamic point-count
+    # floor: n_late points spread across a late window much wider than
+    # "about one point every late_window_reference_step_hours" reads as
+    # under-sampled even when n_late alone clears min_late_points_dynamic,
+    # and vice versa a short, densely-sampled late window is not penalized
+    # just for having fewer absolute points than a longer curve would.
+    if np.isfinite(span) and span > 0:
+        expected_late_pts = int(round(span / float(cfg.late_window_reference_step_hours))) + 1
+        late_missing_frac = float(max(0, expected_late_pts - n_late) / expected_late_pts) if expected_late_pts > 0 else np.nan
+        density_ok = np.isfinite(late_missing_frac) and (late_missing_frac <= float(cfg.late_window_max_missing_frac))
+    else:
+        # span undefined (0 or 1 late point) -- density can't be assessed;
+        # fall back to the count floor alone via density_ok=True, letting
+        # min_late_points_dynamic decide (it will fail on its own for
+        # n_late<2 anyway).
+        density_ok = True
+
+    late_coverage_ok = bool(n_late >= min_late_points_dynamic and density_ok)
+
+    if n_late < min_late_points_dynamic or t_late.size < min_late_points_dynamic or not density_ok:
         return EvidenceScores(
             growth_z_like=0.0,
             artifact_score=0.5,
@@ -422,6 +462,8 @@ def compute_evidence_scores(
             data_quality=0.0,
             confidence=0.0,
             n_late_points=n_late,
+            late_span_hours=float(span) if np.isfinite(span) else np.nan,
+            late_coverage_ok=late_coverage_ok,
         )
 
     # Compute components
@@ -429,7 +471,7 @@ def compute_evidence_scores(
     z_like, slope, delta = compute_growth_evidence_z_like(t_late, y_late, noise_level, cfg)
     artifact_score = compute_artifact_score(t_late, y_late, noise_level, cfg)
     decline_score = compute_decline_score(t_late, y_late, cfg)
-    data_quality = compute_data_quality(t_late, y_late, cfg)
+    data_quality = compute_data_quality(t_late, y_late, cfg, min_late_points_dynamic)
 
     span = float(np.nanmax(t_late) - np.nanmin(t_late)) if t_late.size > 0 else np.nan
 
@@ -452,7 +494,9 @@ def compute_evidence_scores(
         noise_level=float(noise_level) if np.isfinite(noise_level) else np.nan,
         n_late_points=int(n_late),
         late_span_hours=float(span) if np.isfinite(span) else np.nan,
+        late_coverage_ok=True,
     )
+
 
 def compute_decline_score(
     t_late: np.ndarray,
