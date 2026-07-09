@@ -13,6 +13,8 @@ from growthqa.grofit.parametric_models import get_model_specs, extract_grofit_pa
 
 
 def _extract_series(row: pd.Series, time_cols: list[str]) -> tuple[np.ndarray, np.ndarray]:
+    if not time_cols:
+        return np.array([], dtype=float), np.array([], dtype=float)
     t = np.array([parse_time_from_header(c) for c in time_cols], dtype=float)
     y = pd.to_numeric(row[time_cols], errors="coerce").to_numpy(dtype=float)
     mask = np.isfinite(t) & np.isfinite(y)
@@ -27,6 +29,11 @@ def _spline_payload(
     smooth_gc: Optional[float],
     auto_cv: bool,
 ) -> dict:
+    t = np.asarray(t, dtype=float)
+    y = np.asarray(y, dtype=float)
+    if t.size == 0 or y.size == 0 or np.isfinite(t).sum() == 0 or np.isfinite(y).sum() == 0:
+        return {"ran": False}
+
     fit = gc_fit_spline(t, y, lam=spline_s, smooth=smooth_gc, auto_cv=auto_cv)
     if not fit.success:
         return {"ran": False}
@@ -84,6 +91,11 @@ def _spline_payload(
 
 
 def _param_payload(t: np.ndarray, y: np.ndarray) -> dict:
+    t = np.asarray(t, dtype=float)
+    y = np.asarray(y, dtype=float)
+    if t.size == 0 or y.size == 0 or np.isfinite(t).sum() == 0 or np.isfinite(y).sum() == 0:
+        return {"ran": False}
+
     fit = gc_fit_model(t, y)
     if not fit.success or fit.model is None:
         return {"ran": False}

@@ -36,7 +36,6 @@ AUDIT_META_FEATURES: list[str] = [
 # ============================================================
 AUDIT_LATE_FEATURES: list[str] = [
     "has_late_data",
-    "late_window_start",
     "late_n_points",
     "late_span_hours",
     "data_quality",
@@ -69,7 +68,7 @@ def _test_id_encodes_conc(s: object) -> bool:
     return re.search(r"\[(?:\s*Conc\s*=\s*)?([0-9]+(?:\.[0-9]+)?)\s*\]", str(s), flags=re.IGNORECASE) is not None
 
 
-def _with_curve_id(df: pd.DataFrame) -> pd.DataFrame:
+def _with_curve_id(df: pd.DataFrame, *, concentration_lookup: dict | None = None) -> pd.DataFrame:
     """
     Keeps your existing curve_id/curve_key logic style.
     """
@@ -81,6 +80,11 @@ def _with_curve_id(df: pd.DataFrame) -> pd.DataFrame:
 
     if "Concentration" in out.columns:
         out["Concentration"] = pd.to_numeric(out["Concentration"], errors="coerce")
+    elif concentration_lookup:
+        out["Concentration"] = out["Test Id"].map(concentration_lookup)
+        out["Concentration"] = pd.to_numeric(out["Concentration"], errors="coerce")
+
+    if "Concentration" in out.columns:
         conc_txt = out["Concentration"].map(lambda v: f"{float(v):g}" if np.isfinite(v) else "")
         has_conc = out["Concentration"].notna()
         enc = out["Test Id"].map(_test_id_encodes_conc)
@@ -121,8 +125,16 @@ def build_classifier_audit_df(
 
     # Normalize IDs
     wide0 = _with_curve_id(wide_original_df)
-    infer0 = _with_curve_id(infer_df)
-    meta0 = _with_curve_id(meta_df)
+    conc_lookup = None
+    if "Concentration" in wide0.columns:
+        conc_lookup = (
+            wide0[["Test Id", "Concentration"]]
+            .drop_duplicates("Test Id")
+            .set_index("Test Id")["Concentration"]
+            .to_dict()
+        )
+    infer0 = _with_curve_id(infer_df, concentration_lookup=conc_lookup)
+    meta0 = _with_curve_id(meta_df, concentration_lookup=conc_lookup)
 
     # Base columns expected (be tolerant)
     base_infer_cols = [
@@ -182,7 +194,7 @@ def build_classifier_audit_df(
 
     # Merge manual review updates if provided (MANUAL mode)
     if isinstance(review_df, pd.DataFrame) and not review_df.empty:
-        review0 = _with_curve_id(review_df)
+        review0 = _with_curve_id(review_df, concentration_lookup=conc_lookup)
         # Prefer curve_key merge if possible
         if "curve_key" in df.columns and "curve_key" in review0.columns:
             rk = ["curve_key"]
@@ -200,22 +212,33 @@ def build_classifier_audit_df(
                 if "Reviewed_review" in df.columns:
                     df["Reviewed"] = _col_as_series(df, "Reviewed_review").combine_first(_col_as_series(df, "Reviewed", False))
                     df.drop(columns=["Reviewed_review"], inplace=True)
+                elif "Reviewed" in df.columns:
+                    df["Reviewed"] = _col_as_series(df, "Reviewed", False).fillna(False).astype(bool)
 
                 # Apply label update into a canonical internal column
                 if review_label_col is not None:
                     col_name = f"{review_label_col}_review"
-                    if col_name in df.columns:
-                        df["true_label"] = _col_as_series(df, col_name).combine_first(_col_as_series(df, "true_label", np.nan))
-                        df.drop(columns=[col_name], inplace=True)
+                    merged_label_col = col_name if col_name in df.columns else review_label_col
+                    if merged_label_col in df.columns:
+                        df["true_label"] = _col_as_series(df, merged_label_col).combine_first(_col_as_series(df, "true_label", np.nan))
+                        if merged_label_col != review_label_col:
+                            df.drop(columns=[merged_label_col], inplace=True)
 
     if "Pred Label" not in df.columns:
         df["Pred Label"] = _col_as_series(df, "final_label", _col_as_series(df, "pred_label", ""))
 
+    if "Final Label (S1+S2)" not in df.columns:
+        df["Final Label (S1+S2)"] = _col_as_series(df, "final_label", _col_as_series(df, "Pred Label", ""))
+
+    if "true_label" not in df.columns:
+        df["true_label"] = df["Final Label (S1+S2)"]
+
     df["True Label"] = df.apply(lambda r: resolve_display_label(r, fallback=str(r.get("Pred Label", ""))), axis=1)
 
-
-    # normalize Reviewed to boolean
-    df["Reviewed"] = _col_as_series(df, "Reviewed", False).fillna(False).astype(bool)
+    if mode.upper() == "MANUAL":
+        df["Reviewed"] = _col_as_series(df, "Reviewed", False).fillna(False).astype(bool)
+    else:
+        df["Reviewed"] = "Disabled"
 
     # Out-of-distribution gap/missingness override for audit/export
     # semantics. Kept in sync with the copy in infer_labels.py -- see that
@@ -273,7 +296,7 @@ def build_classifier_audit_df(
 
     for must in ["Test Id", "Concentration", "curve_key", "Pred Label", "Pred Confidence",
                  "S1 Confidence Valid", "S1 Confidence Invalid",
-                 "Stage 2 Label", "Label Reason", "True Label", "Reviewed"]:
+                 "Stage 2 Label", "Label Reason", "Final Label (S1+S2)", "True Label", "Reviewed"]:
         if must in df.columns and must not in ordered:
             ordered.insert(min(len(ordered), 3) if must == "curve_key" else len(ordered), must)
 
@@ -289,7 +312,5 @@ def build_classifier_audit_df(
         if c not in seen:
             ordered_unique.append(c)
             seen.add(c)
-        if mode.upper() != "MANUAL":
-            ordered_unique = [c for c in ordered_unique if c != "Reviewed"]
 
     return df[ordered_unique].copy()

@@ -356,7 +356,7 @@ def _compute_stage2_features_from_wide_evidence(
                 "Concentration": conc,
                 "curve_key": curve_key,
                 "has_late_data": has_late,
-                "late_window_start": float(cfg.stage2_start),
+                # "late_window_start": float(cfg.stage2_start),
                 "late_n_points": int(ev.n_late_points),
                 "late_span_hours": float(ev.late_span_hours) if np.isfinite(ev.late_span_hours) else np.nan,
                 # Core evidence
