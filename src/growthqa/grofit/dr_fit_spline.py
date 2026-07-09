@@ -6,9 +6,9 @@ from typing import Any, Dict, Optional
 import numpy as np
 from scipy.interpolate import make_smoothing_spline
 
-from .dr_fit_model import dr_fit_model
-from .parametric_models import aic_from_rss
-from .gc_fit_spline import effective_df, DR_MIN_DF, spar_to_lam, _select_lam_and_fit
+from growthqa.grofit.dr_fit_model import dr_fit_model
+from growthqa.grofit.parametric_models import aic_from_rss
+from growthqa.grofit.gc_fit_spline import effective_df, DR_MIN_DF, spar_to_lam, _select_lam_and_fit
 
 
 # ---------------------------------------------------------------------------

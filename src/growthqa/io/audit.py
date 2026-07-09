@@ -37,6 +37,7 @@ AUDIT_META_FEATURES: list[str] = [
 AUDIT_LATE_FEATURES: list[str] = [
     "has_late_data",
     "late_n_points",
+    "min_late_points_required",
     "late_span_hours",
     "data_quality",
     "growth_z_like",
@@ -148,6 +149,8 @@ def build_classifier_audit_df(
         "S1 Confidence Valid",
         "Stage 2 Label",
         "Label Reason",
+        "Final Label (S1+S2)",
+        "True Label",
     ]
 
     if mode.upper() == "MANUAL":

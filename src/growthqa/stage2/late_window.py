@@ -107,6 +107,12 @@ class EvidenceScores:
                                      # point-count floor AND the density gate
                                      # (late_window_reference_step_hours /
                                      # late_window_max_missing_frac) are satisfied
+    min_late_points_required: int = 0  # the per-curve threshold late_n_points
+                                        # was actually compared against, from
+                                        # _dynamic_min_late_points() -- makes
+                                        # has_late_data auditable: was this
+                                        # curve withheld for too few points,
+                                        # or for a low-density late window?
 
 
 # ----------------------------
@@ -413,6 +419,8 @@ def compute_evidence_scores(
             data_quality=0.0,
             confidence=0.0,
             n_late_points=0,
+            min_late_points_required=cfg.min_late_points_floor,
+
         )
 
     # Sort
@@ -464,6 +472,8 @@ def compute_evidence_scores(
             n_late_points=n_late,
             late_span_hours=float(span) if np.isfinite(span) else np.nan,
             late_coverage_ok=late_coverage_ok,
+            min_late_points_required=min_late_points_dynamic,
+
         )
 
     # Compute components
@@ -495,6 +505,7 @@ def compute_evidence_scores(
         n_late_points=int(n_late),
         late_span_hours=float(span) if np.isfinite(span) else np.nan,
         late_coverage_ok=True,
+        min_late_points_required=int(min_late_points_dynamic),
     )
 
 
@@ -565,6 +576,7 @@ def compute_stage2_checker_status(
         "late_delta": float(evidence.late_delta) if np.isfinite(evidence.late_delta) else np.nan,
         "noise_level": float(evidence.noise_level) if np.isfinite(evidence.noise_level) else np.nan,
         "late_n_points": int(evidence.n_late_points),
+        "min_late_points_required": int(evidence.min_late_points_required),
         "late_span_hours": float(evidence.late_span_hours) if np.isfinite(evidence.late_span_hours) else np.nan,
     }
 

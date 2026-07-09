@@ -116,7 +116,18 @@ def build_run_info(
     Organised by question answered, not by where each value happened to be
     computed: run identity, how the input was preprocessed, the Grofit math
     config, what the user picked via the UI, and the software environment.
+
+    Deliberately curated (a fixed whitelist per section), not a raw dump of
+    every field on the underlying dataclasses: fine-grained implementation
+    tuning constants (e.g. Stage 2's artifact-score component knobs, numeric
+    safety epsilons) don't help a reader audit what produced a given run's
+    labels, and dumping __dict__ wholesale means every unrelated internal
+    field change silently starts appearing here. Only fields that actually
+    affect a curve's label, fit, or exported values are included.
     """
+    preprocessing = dict(settings.__dict__) if settings else {}
+    stage2_full = dict(stage2_config) if stage2_config else {}
+
     return {
         "run": {
             "mode": mode_label,
@@ -124,8 +135,23 @@ def build_run_info(
             "file_stem": file_stem,
             "predicting_model": predicting_model,
         },
-        "preprocessing": dict(settings.__dict__) if settings else None,
-        "stage2_thresholds": stage2_config,
+        "preprocessing": {
+            k: preprocessing[k] for k in [
+                "input_is_raw", "global_blank", "step", "min_points",
+                "tmax_hours", "auto_tmax", "auto_tmax_coverage",
+                "clip_negatives", "smooth_method", "smooth_window", "normalize",
+            ] if k in preprocessing
+        },
+        "stage2_thresholds": {
+            k: stage2_full[k] for k in [
+                "stage2_start",
+                "min_late_points_floor", "min_late_points_ceiling",
+                "min_late_hours_anchor", "min_late_points_fallback_rate_per_hour",
+                "late_window_reference_step_hours", "late_window_max_missing_frac",
+                "quality_threshold", "growth_z_threshold",
+                "artifact_score_threshold", "decline_score_threshold",
+            ] if k in stage2_full
+        },
         "grofit_config": {
             **grofit_opts.__dict__,
             "bootstrap_method": normalize_bootstrap_method(grofit_opts.bootstrap_method),
