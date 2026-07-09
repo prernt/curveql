@@ -360,16 +360,19 @@ def build_dr_payload(
         else:
             # 4PL fallback or other methods already return original scale
             x_grid = x_grid_raw
-    else:
+    elif x.size:
         # 3. Robust fallback if fit completely failed
         x_grid = np.linspace(float(np.min(x)), float(np.max(x)), 400)
+    else:
+        x_grid = np.array([])
 
     # x_grid = fit.get("x_grid")
     # x_grid_transformed = fit.get("x_grid")          # log1p space
     # x_grid = np.expm1(x_grid_transformed)           
     y_hat = fit.get("y_hat")
-    if x_grid is None or y_hat is None:
+    if (x_grid is None or y_hat is None) and x.size:
         x_grid = np.linspace(float(np.min(x)), float(np.max(x)), 400)
+
         try:
             from scipy.interpolate import UnivariateSpline
 
