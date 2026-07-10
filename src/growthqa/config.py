@@ -104,6 +104,15 @@ GAP_MAX_MISSING_FRAC = 0.80
 MAX_GAP_HOURS_OVERRIDE = 10.0
 MISSING_FRAC_OVERRIDE = 0.85
 
+# Feature-completeness override (item 22): independent of too_sparse (point
+# count) and ood_gap (grid coverage) -- catches curves that pass both of
+# those but still have too many of the 16 classifier features unmeasurable
+# by construction (see item 21, Missing Not At Random features like
+# lag_time_est on a curve that never rises above its own starting value).
+# 0.25 sits inside the commonly cited range for when missing data starts to
+# bias estimates (Bennett, 2001); tune here if you want it stricter/looser.
+MISSING_FEATURE_FRAC_OVERRIDE = 0.25
+
 # ---------------------------------------------------------------------------
 # Stage 1 candidate feature pool
 # ---------------------------------------------------------------------------

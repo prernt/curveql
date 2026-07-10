@@ -25,8 +25,8 @@ from growthqa.pipelines.build_meta_dataset import (
 from growthqa.config import (
     MIN_POINTS, MAX_GAP_HOURS_OVERRIDE, MISSING_FRAC_OVERRIDE,
     LATE_WINDOW_REFERENCE_STEP_HOURS, LATE_WINDOW_MAX_MISSING_FRAC,
-    MIN_LATE_POINTS_FLOOR, MIN_LATE_POINTS_CEILING,
-    MIN_LATE_HOURS_ANCHOR, MIN_LATE_POINTS_FALLBACK_RATE_PER_HOUR,
+    MIN_LATE_POINTS_FLOOR, MIN_LATE_POINTS_CEILING,MISSING_FEATURE_FRAC_OVERRIDE,
+    MIN_LATE_HOURS_ANCHOR, MIN_LATE_POINTS_FALLBACK_RATE_PER_HOUR, STAGE1_SELECTED_FEATURES
 )
 from growthqa.preprocess.timegrid import parse_time_from_header, get_sorted_time_columns
 
@@ -704,6 +704,24 @@ def run_label_inference_from_uploaded_wide(
         out_df.loc[ood_gap_mask, "Pred Label"] = "Unsure"
         out_df.loc[ood_gap_mask, "pred_label"] = "Unsure"
         out_df.loc[ood_gap_mask, "Label Reason"] = "OUT_OF_DISTRIBUTION_GAP_OVERRIDE"
+
+    # Feature-completeness override (item 22): force Unsure when too many of
+    # the 16 classifier features are missing on this curve, independent of the
+    # too_sparse point-count gate below (a curve can pass too_sparse cleanly
+    # while still having several unmeasurable features -- see item 21).
+    _feat_cols = [c for c in STAGE1_SELECTED_FEATURES if c in out_df.columns]
+    n_missing = out_df[_feat_cols].isna().sum(axis=1)
+    missing_frac = n_missing / max(len(_feat_cols), 1)
+    out_df["n_features_missing"] = n_missing
+    out_df["feature_missing_frac"] = missing_frac.round(3)
+    feature_completeness_mask = (missing_frac > MISSING_FEATURE_FRAC_OVERRIDE).fillna(False)
+    if feature_completeness_mask.any():
+        out_df.loc[feature_completeness_mask, "final_label"] = "Unsure"
+        out_df.loc[feature_completeness_mask, "Final Label (S1+S2)"] = "Unsure"
+        out_df.loc[feature_completeness_mask, "Pred Label"] = "Unsure"
+        out_df.loc[feature_completeness_mask, "pred_label"] = "Unsure"
+        out_df.loc[feature_completeness_mask, "Label Reason"] = "FEATURE_COMPLETENESS_OVERRIDE"
+
 
     # Authoritative sparse override: sparse curves can never remain Valid.
     # Runs after the gap override so its reason wins if a curve triggers

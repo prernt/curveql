@@ -144,14 +144,14 @@ def _retire_previous_run_artifacts(art_dir: Path) -> List[str]:
 def build_models() -> Dict[str, Pipeline]:
     lr = Pipeline(
         steps=[
-            ("imputer", SimpleImputer(strategy="median")),
+            ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
             ("scaler", StandardScaler()),
             ("clf", LogisticRegression(max_iter=500, class_weight="balanced", random_state=RANDOM_STATE)),
         ]
     )
     rf = Pipeline(
         steps=[
-            ("imputer", SimpleImputer(strategy="median")),
+            ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
             ("clf", RandomForestClassifier(
                 n_estimators=600,
                 random_state=RANDOM_STATE,
@@ -162,7 +162,7 @@ def build_models() -> Dict[str, Pipeline]:
     )
     hgb = Pipeline(
         steps=[
-            ("imputer", SimpleImputer(strategy="median")),
+            ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
             ("clf", HistGradientBoostingClassifier(
                 max_depth=6,
                 learning_rate=0.08,

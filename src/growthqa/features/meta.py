@@ -150,12 +150,13 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
             "largest_drop_frac": np.nan,
             "roughness": np.nan,
             "noise_residual_std": np.nan,
+            "noise_residual_std_is_fallback": np.nan,
             "lag_time_est": np.nan,
             "plateau_OD": np.nan,
             "growth_phase_duration": np.nan,
             "symmetry_factor": np.nan,
             "num_slope_sign_changes": np.nan,
-            "multi_phase_flag": np.nan,
+            "multi_phase_flag": (np.nan if pd.isna(multi_phase_flag) else int(bool(multi_phase_flag))),
             "logistic_fit_mse": np.nan,
             "logistic_AIC": np.nan,
             "gompertz_AIC": np.nan,
@@ -213,15 +214,34 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
     i_max = int(np.nanargmax(od))
     time_of_max_od = float(t[i_max])
     mono = float(np.mean(dy > 0)) if dy.size > 0 else np.nan
+    # largest_drop_frac = np.nan
+    # if dy.size > 0 and range_od > 1e-9 and np.any(dy < 0):
+    #     largest_drop_frac = float(abs(np.nanmin(dy)) / range_od)
     largest_drop_frac = np.nan
-    if dy.size > 0 and range_od > 1e-9 and np.any(dy < 0):
-        largest_drop_frac = float(abs(np.nanmin(dy)) / range_od)
+    if dy.size > 0:
+        if range_od > 1e-9:
+            largest_drop_frac = float(abs(np.nanmin(dy)) / range_od) if np.any(dy < 0) else 0.0
+        else:
+            largest_drop_frac = 0.0  # flat curve: no variation, no drop possible
 
     roughness = float(np.nanstd(dy)) if dy.size > 0 else np.nan
     noise_residual_std = np.nan
+    noise_residual_std_is_fallback = False
     if od.size >= 8:
         base = rolling_smooth(od, window=5)
         noise_residual_std = float(np.nanstd(od - base))
+    elif od.size >= 4:
+        # Successive-difference noise estimator (von Neumann 1941; Rice 1984):
+        # for i.i.d. noise on a locally slowly-varying signal, Var(y[i+1]-y[i]) ≈ 2·sigma^2,
+        # so sigma ≈ std(diff(y)) / sqrt(2). Coarser than the rolling-smooth-residual
+        # method above, and biased upward if the curve has real curvature over just
+        # 4-7 points, but a non-NaN estimate paired with the missingness indicator
+        # from item 21(a) gives the model something to work with instead of pure
+        # median imputation discarding the signal outright.
+        d = np.diff(od)
+        if d.size > 0:
+            noise_residual_std = float(np.nanstd(d) / np.sqrt(2.0))
+            noise_residual_std_is_fallback = True
 
     lag_time = np.nan
     if range_od > 1e-9:
@@ -257,18 +277,20 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
         if nz.size > 1:
             num_slope_sign_changes = int(np.sum(np.diff(nz) != 0))
 
-    multi_phase_flag = False
-    if od.size >= 7 and range_od > 1e-9:
-        local_max_idxs = []
-        for i in range(1, len(od) - 1):
-            if od[i] >= od[i - 1] and od[i] >= od[i + 1]:
-                local_max_idxs.append(i)
-        if len(local_max_idxs) >= 2:
-            p1, p2 = local_max_idxs[0], local_max_idxs[-1]
-            if (od[p1] - initial_od) > 0.2 * range_od and (od[p2] - initial_od) > 0.2 * range_od:
-                mid_min = float(np.min(od[p1:p2 + 1]))
-                if (max_od - mid_min) > 0.2 * range_od:
-                    multi_phase_flag = True
+    multi_phase_flag = np.nan
+    if od.size >= 7:
+        multi_phase_flag = False
+        if range_od > 1e-9:
+            local_max_idxs = []
+            for i in range(1, len(od) - 1):
+                if od[i] >= od[i - 1] and od[i] >= od[i + 1]:
+                    local_max_idxs.append(i)
+            if len(local_max_idxs) >= 2:
+                p1, p2 = local_max_idxs[0], local_max_idxs[-1]
+                if (od[p1] - initial_od) > 0.2 * range_od and (od[p2] - initial_od) > 0.2 * range_od:
+                    mid_min = float(np.min(od[p1:p2 + 1]))
+                    if (max_od - mid_min) > 0.2 * range_od:
+                        multi_phase_flag = True
 
     logistic_fit_mse = np.nan
     logistic_AIC = np.nan
@@ -334,12 +356,13 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
         "largest_drop_frac": largest_drop_frac,
         "roughness": roughness,
         "noise_residual_std": noise_residual_std,
+        "noise_residual_std_is_fallback": int(noise_residual_std_is_fallback),
         "lag_time_est": lag_time,
         "plateau_OD": plateau_od,
         "growth_phase_duration": growth_phase_duration,
         "symmetry_factor": symmetry_factor,
         "num_slope_sign_changes": num_slope_sign_changes,
-        "multi_phase_flag": int(bool(multi_phase_flag)),
+        "multi_phase_flag": (np.nan if pd.isna(multi_phase_flag) else int(bool(multi_phase_flag))),
         "logistic_fit_mse": logistic_fit_mse,
         "logistic_AIC": logistic_AIC,
         "gompertz_AIC": gompertz_AIC,
