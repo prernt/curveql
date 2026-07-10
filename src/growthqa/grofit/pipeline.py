@@ -13,12 +13,12 @@ from growthqa.grofit.dr_fit_model import dr_fit_model
 from growthqa.grofit.dr_boot_spline import dr_boot_spline
 from growthqa.grofit.interactive import apply_user_exclusion, UserFilterFn
 from growthqa.grofit.export import export_results_zip
+from growthqa.grofit.gc_fit_spline import GC_MIN_DF
+
 
 ResponseVar = Literal["A", "mu", "lambda", "integral"]
 FitOpt = Literal["m", "s", "b"]
 DrFitMethod = Literal["auto", "spline", "4pl"]
-PIPELINE_VERSION = "1.1.0"
-SCHEMA_VERSION   = "1.1.0"
 
 # ---------------------------------------------------------------------------
 # Column order constants
@@ -127,15 +127,18 @@ GC_AUDIT_COLS: list[str] = [
     # spline diagnostics
     "smooth.used",          # effective spline smoothing parameter actually applied
     "df.effective",         # effective degrees of freedom of the fitted spline
+    "smoothing.method",     # gcv_ok = auto-selected freely; gcv_bounded = GC_MIN_DF
+                             # floor (4.0) had to override auto-selection; fallback =
+                             # GCV itself failed; user = a manual lam/spar was supplied
     "lag.method.spline",    # how lag was derived: tangent / geometric / etc.
     "lag.method.model",     # analytical / fallback
     "y0.baseline.spline",   # baseline OD used for spline lag computation
     # transform metadata (not in Grofit R → audit only)
-    "x_transform",          # none / log10 / log1p
-    "y_transform",          # none (reserved)
+    # "x_transform",          # none / log10 / log1p
+    # "y_transform",          # none (reserved)
     # schema / reproducibility
-    "pipeline_version",
-    "schema_version",
+    # "pipeline_version",
+    # "schema_version",
 ]
 
 # ── DR_FIT ────────────────────────────────────────────────────────────────────
@@ -178,6 +181,7 @@ DR_BOOT_COLS: list[str] = [
     "EC50.high",            # 95% CI upper
     "EC50.orig.low",
     "EC50.orig.high",
+    "EC50.crossing_rate",        # fraction of resamples that were genuine target crossings, not NO_CROSS_NEAREST boundary fallbacks
 ]
 
 # ── DR_AUDIT ──────────────────────────────────────────────────────────────────
@@ -193,10 +197,26 @@ DR_AUDIT_COLS: list[str] = [
     "dr.monotonic",         # was the chosen fit monotonic?
     "ec50.status",          # OK / extrapolated / no_crossing / etc.
     # transform metadata
-    "x_transform_norm",     # internal normalised transform key used by the fitter
+    "x_transform_norm",  
+    "conc_span_orders_of_magnitude",  # log10(max_conc/min_conc); Grofit R's own
+                                       # documentation ties log.x.dr's usefulness
+                                       # directly to how unevenly concentrations
+                                       # are spread on the x-axis
+    "log_transform_advisable",        # True when span >= 2 orders of magnitude
+                                       # (100x) and no transform was applied --
+                                       # informational flag only, never changes
+                                       # what the user selected
+    "ec50_crossing_rate",   # fraction of DR bootstrap resamples whose fitted
+                             # curve genuinely crossed the target response,
+                             # vs. NO_CROSS_NEAREST fallback -- low values mean
+                             # EC50.low/EC50.high above rest on fewer real
+                             # crossings than the requested B suggests. NaN
+                             # when bootstrap didn't run.
+
+   # internal normalised transform key used by the fitter
     # schema / reproducibility
-    "pipeline_version",
-    "schema_version",
+    # "pipeline_version",
+    # "schema_version",
 ]
 
 
@@ -339,7 +359,46 @@ def run_grofit_pipeline(
                     smooth=smooth_gc,
                     bootstrap_method=bootstrap_method,
                 )
+        def _actual_nboot(boot_result, requested_B, valid_final, opt) -> int:
+            """Number of bootstrap resamples that actually produced a usable
+            fit and back every reported CI in this row -- not just the
+            requested B. gc_boot_spline silently drops failed resamples, so
+            reporting the requested B overstates how many actually
+            contributed. Takes the min across mu/lambda/A/integral since a
+            resample can succeed for some derived quantities and not others."""        
+            if not (requested_B > 0 and valid_final and opt in {"s", "b"}):
+                return 0
+            if boot_result is None or not bool(boot_result.get("success")):
+                return 0
+            ns = [int(boot_result.get(k, {}).get("n", 0))
+                for k in ("mu", "lambda", "A", "integral")]
+            return min(ns) if ns else 0
 
+
+        def _resolve_smoothing_method(fit) -> float | str:
+            """gcv_bounded currently covers two mechanically different cases:
+            GC_MIN_DF forcing MORE flexibility than GCV wanted (df.effective
+            lands at/above the floor), vs. the curve being too sparse for
+            even the least-smoothed spline to REACH the floor (df.effective
+            lands below it). Splitting them here, from already-computed
+            df.effective, needs no change to the fitting logic itself."""
+            if fit is None:
+                return np.nan
+            method = (getattr(fit, "extra", {}) or {}).get("lam_method", np.nan)
+            if method != "gcv_bounded":
+                return method
+            # df_eff = getattr(fit, "df_effective", np.nan)
+            # if not np.isfinite(df_eff):
+            #     return method
+            # return "gcv_bounded_floor" if df_eff >= GC_MIN_DF else "gcv_bounded_unreachable"
+            df_eff = getattr(fit, "df_effective", np.nan)
+            if not np.isfinite(df_eff):
+                return method
+            # Bisection in _find_bounded_lambda essentially never lands on
+            # exactly GC_MIN_DF -- a tiny undershoot (e.g. 3.9999998) means
+            # the floor was genuinely reached, not that it was unreachable.
+            return "gcv_bounded_floor" if df_eff >= (GC_MIN_DF - 1e-6) else "gcv_bounded_unreachable"
+        
         def _v(fit, attr: str) -> float:
             """Safe attribute read → np.nan on missing/failed fit."""
             if fit is None or not fit.success:
@@ -369,10 +428,7 @@ def run_grofit_pipeline(
             "reliability":    bool(is_valid_final),
             "used.model":     ("" if (pfit is None or not pfit.success)
                                else (pfit.model or "")),
-            "nboot.fit":      int(gc_boot_B) if (
-                                  gc_boot_B > 0 and is_valid_final
-                                  and fit_opt in {"s", "b"}
-                              ) else 0,
+            "nboot.fit":      _actual_nboot(boot, gc_boot_B, is_valid_final, fit_opt),
             "n.obs":          n_obs,
             # parametric
             "mu.model":       _v(pfit, "mu"),
@@ -432,15 +488,17 @@ def run_grofit_pipeline(
             # spline diagnostics
             "smooth.used":       _v(sfit, "smooth_used"),
             "df.effective":      _v(sfit, "df_effective"),
+            # "smoothing.method":  (getattr(sfit, "extra", {}) or {}).get("lam_method", np.nan) if sfit else np.nan,
+            "smoothing.method":  _resolve_smoothing_method(sfit),
             "lag.method.spline": getattr(sfit, "lag_method",  np.nan) if sfit else np.nan,
             "lag.method.model":  getattr(pfit, "lag_method",  np.nan) if pfit else np.nan,
             "y0.baseline.spline":_v(sfit, "y0_baseline"),
             # transform metadata
-            "x_transform": "none",
-            "y_transform": "none",
+            # "x_transform": "none",
+            # "y_transform": "none",
             # schema
-            "pipeline_version": PIPELINE_VERSION,
-            "schema_version":   SCHEMA_VERSION,
+            # "pipeline_version": PIPELINE_VERSION,
+            # "schema_version":   SCHEMA_VERSION,
         })
 
         # ── GC_BOOT row ─────────────────────────────────────────────────────
@@ -517,7 +575,7 @@ def run_grofit_pipeline(
     dr_boot_rows:  list[dict] = []
     dr_audit_rows: list[dict] = []
     log_x = 1 if str(dr_x_transform).strip().lower() in {"log1p", "log", "log10"} else 0
-    log_y_dr = 1 if str(dr_y_transform or "").strip().lower() in {"log1p", "ln1p"} else 0
+    log_y_dr = 1 if str(dr_y_transform or "").strip().lower() in {"log1p", "log10", "log"} else 0
     metric = str(response_var)
     for test_id in curve_index["test_id"].drop_duplicates():
         g = dr_source[dr_source["test.id"] == test_id].copy()
@@ -576,15 +634,34 @@ def run_grofit_pipeline(
         conc_arr = gg["concentration"].to_numpy(dtype=float)
         resp_arr = gg[resp_col].to_numpy(dtype=float)
 
-        log_y = 0
-        resp_for_fit = resp_arr
-        if (dr_y_transform or "").lower() in {"log1p", "ln1p"}:
-            if np.nanmin(resp_arr) < -1.0:
-                dr_rows.append(_dr_failed("dr_y_transform_invalid_lt_minus1", n_conc=n_conc))
-                continue
-            resp_for_fit = np.log1p(resp_arr)
-            log_y = 1
+        # log_y = 0
+        # resp_for_fit = resp_arr
+        # if (dr_y_transform or "").lower() in {"log1p", "ln1p"}:
+        #     if np.nanmin(resp_arr) < -1.0:
+        #         dr_rows.append(_dr_failed("dr_y_transform_invalid_lt_minus1", n_conc=n_conc))
+        #         continue
+        #     resp_for_fit = np.log1p(resp_arr)
+        #     log_y = 1
 
+
+        # spline_fit = dr_fit_spline(
+        #     conc_arr, resp_for_fit,
+        #     x_transform=dr_x_transform,
+        #     lam=dr_s,
+        #     # auto_cv=(dr_s is None),
+        #     smooth=smooth_dr,
+        #     y_transform=("log1p" if log_y == 1 else None),
+        #     auto_cv=(dr_s is None and smooth_dr is None),
+        #     enforce_monotonic=True,
+        #     fallback_to_4pl=(dr_fit_method != "spline"),
+        # )
+        # dr_fit_spline already validates + forward/inverse-transforms log1p,
+        # log10, and log correctly on its own (see y_transform_norm handling
+        # in dr_fit_spline.py) -- pass dr_y_transform straight through rather
+        # than re-deriving a log1p-only flag here, which previously meant
+        # selecting "log10" in the UI silently had no effect on the fit.
+        log_y = 1 if str(dr_y_transform or "").strip().lower() in {"log1p", "log10", "log"} else 0
+        resp_for_fit = resp_arr
 
         spline_fit = dr_fit_spline(
             conc_arr, resp_for_fit,
@@ -592,7 +669,7 @@ def run_grofit_pipeline(
             lam=dr_s,
             # auto_cv=(dr_s is None),
             smooth=smooth_dr,
-            y_transform=("log1p" if log_y == 1 else None),
+            y_transform=dr_y_transform,
             auto_cv=(dr_s is None and smooth_dr is None),
             enforce_monotonic=True,
             fallback_to_4pl=(dr_fit_method != "spline"),
@@ -631,11 +708,25 @@ def run_grofit_pipeline(
 
         ec50   = chosen.get("ec50",   np.nan)
         y_ec50 = float(chosen.get("y_ec50")) if np.isfinite(chosen.get("y_ec50", np.nan)) else np.nan
-        y_ec50_orig = (float(np.expm1(y_ec50)) if log_y == 1 and np.isfinite(y_ec50) else y_ec50)
+        # y_ec50_orig = (float(np.expm1(y_ec50)) if log_y == 1 and np.isfinite(y_ec50) else y_ec50)
+        _yt_norm = str(dr_y_transform or "").strip().lower()
+        if _yt_norm in {"log10", "log"} and np.isfinite(y_ec50):
+            y_ec50_orig = float(10.0 ** y_ec50)
+        elif _yt_norm in {"log1p", "ln1p"} and np.isfinite(y_ec50):
+            y_ec50_orig = float(np.expm1(y_ec50))
+        else:
+            y_ec50_orig = y_ec50
 
-
-        aic_s = spline_fit.get("aic", np.nan)
-        aic_m = model_fit.get("aic",  np.nan)
+        # aic_s = spline_fit.get("aic", np.nan)
+        # aic_m = model_fit.get("aic",  np.nan)
+        # When the spline is non-monotonic, dr_fit_spline() internally falls
+        # back to a 4PL fit and returns ITS aic under the "spline" result --
+        # so aic.spline would silently just repeat aic.4pl and delta.aic.dr
+        # would be a meaningless 0.0. Report NaN for the spline side in that
+        # case instead of a number that doesn't represent the spline at all.
+        _spline_is_fallback = str(spline_fit.get("method", "")).strip().lower() == "4pl_fallback"
+        aic_s = np.nan if _spline_is_fallback else spline_fit.get("aic", np.nan)
+        aic_m = model_fit.get("aic", np.nan)
 
         method_label = (
         "Spline" if str(chosen_name).lower().startswith(("spline", "mono", "smooth"))
@@ -670,6 +761,11 @@ def run_grofit_pipeline(
             "fail.reason":    chosen.get("fail_reason", None),
             "dr.method":      dr_method_tag,
         })
+        
+        _conc_finite = conc_arr[np.isfinite(conc_arr) & (conc_arr > 0)]
+        _conc_span_orders = (
+            float(np.log10(np.nanmax(_conc_finite) / np.nanmin(_conc_finite)))
+            if _conc_finite.size >= 2 else np.nan)
 
         # DR_AUDIT row
         dr_audit_rows.append({
@@ -680,9 +776,19 @@ def run_grofit_pipeline(
             "dr.monotonic":     bool(chosen.get("dr_monotonic", True)),
             "ec50.status":      chosen.get("ec50_status", "OK"),
             "x_transform_norm": chosen.get("x_transform_norm", dr_x_transform or "none"),
-            "pipeline_version": PIPELINE_VERSION,
-            "schema_version":   SCHEMA_VERSION,
+            "ec50_fit_space": chosen.get("ec50_fit_space", "transformed"),  # "raw_concentration"
+                                # when the 4PL fallback won -- x_transform_norm
+                                # above still reports what was requested for the
+                                # spline stage, this reports what the winning
+                                # fit actually used
+            "conc_span_orders_of_magnitude": _conc_span_orders,
+            "log_transform_advisable": bool(
+                np.isfinite(_conc_span_orders) and _conc_span_orders >= 2.0
+                and (dr_x_transform or "none").lower() == "none"
+            ),
+            "ec50_crossing_rate": np.nan,  # filled in below if bootstrap runs
         })
+        _dr_audit_row = dr_audit_rows[-1]  # same dict object -- update in place
 
         # DR bootstrap
         if dr_boot_B > 0 and n_conc >= max(6, int(have_atleast)):
@@ -697,6 +803,8 @@ def run_grofit_pipeline(
                 x_transform=dr_x_transform,
                 lam=dr_s,
             )
+
+            _dr_audit_row["ec50_crossing_rate"] = dr_boot_result.get("ec50_crossing_rate", np.nan)
 
             if dr_boot_result.get("success"):
                 ec50_orig_lo = dr_boot_result.get("ec50_lo", np.nan)
@@ -725,6 +833,7 @@ def run_grofit_pipeline(
                     "EC50.high":      _fwd(ec50_orig_hi),   # transformed-space upper CI
                     "EC50.orig.low":  ec50_orig_lo,          # original units lower CI
                     "EC50.orig.high": ec50_orig_hi,          # original units upper CI
+                    "EC50.crossing_rate": dr_boot_result.get("crossing_rate", np.nan),
                 })
 
     # ── Build DR DataFrames ──────────────────────────────────────────────────
@@ -751,8 +860,8 @@ def run_grofit_pipeline(
     if export_dir is not None:
         
         run_info = {
-             "pipeline_version": PIPELINE_VERSION,
-             "schema_version": SCHEMA_VERSION,
+            #  "pipeline_version": PIPELINE_VERSION,
+            #  "schema_version": SCHEMA_VERSION,
 
              # grofit.control semantics
              "fit.opt": fit_opt,

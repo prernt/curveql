@@ -47,7 +47,7 @@ RANDOM_STATE = 42
 # "defined in one place" isn't just tidiness, it's a correctness requirement.
 STEP_HOURS = 0.5
 TMAX_HOURS = 16.0
-MIN_POINTS = 3
+MIN_POINTS = 4
 SMOOTH_METHOD = "SGF"
 SMOOTH_WINDOW = 5
 NORMALIZE = "MINMAX"

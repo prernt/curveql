@@ -18,7 +18,7 @@ from growthqa.grofit.parametric_models import (
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _is_degenerate(popt: np.ndarray, pcov: np.ndarray,
-                   se_ratio_threshold: float = 1000.0) -> bool:
+                   se_ratio_threshold: float = 5.0) -> bool:
     """
     Return True if any parameter's standard error exceeds
     `se_ratio_threshold` × |parameter value|.
@@ -30,17 +30,38 @@ def _is_degenerate(popt: np.ndarray, pcov: np.ndarray,
 
     Example: concentration 3 µM Richards in v2 returned
         mu=0.078, mu_se=5935  →  ratio=76000  →  degenerate=True
+
+    Threshold tightened from 1000 to 5 (2026-07): a real 4-early/4-late
+    split curve (31.5h_3.0_lab_BY4741_A2) passed the old threshold with
+    lambda.se = 50x lambda.model -- a parameter with essentially zero
+    information was reported as a valid fit and selected as the winning
+    model. At threshold=5, any parameter whose SE exceeds 5x its own
+    estimate is treated as unidentifiable and the fit is discarded in
+    favor of other candidates or the spline fallback.
     """
     try:
         perr = np.sqrt(np.diag(pcov))
         for se, p in zip(perr, popt):
             if not np.isfinite(se) or not np.isfinite(p):
                 return True
+            
             if abs(p) > 1e-12 and se / abs(p) > se_ratio_threshold:
+                return True
+            # A genuine NLS fit on empirical data essentially never produces
+            # an exactly-zero standard error. Seeing one means RSS collapsed
+            # to ~0, not that the parameter is unusually well-determined --
+            # for a curve with a large internal data gap (e.g. two widely
+            # separated observation clusters), this is the model
+            # interpolating through the visible points with no real
+            # constraint in the gap, mirrored by pcov going singular/zero
+            # rather than reflecting genuine precision.
+            if se < 1e-8:
                 return True
         return False
     except Exception:
         return True
+        
+    
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -183,10 +204,28 @@ def gc_fit_model(t: np.ndarray, y: np.ndarray) -> FitResult:
     best: Optional[FitResult] = None
     aic_table: List[Dict[str, Any]] = []
 
+    # for name, spec in specs.items():
+    #     p0_base = starts.get(name)
+    #     if p0_base is None:
+    #         aic_table.append({"model": name, "aic": float("nan"), "status": "no_start"})
+    #         continue
     for name, spec in specs.items():
         p0_base = starts.get(name)
         if p0_base is None:
             aic_table.append({"model": name, "aic": float("nan"), "status": "no_start"})
+            continue
+
+        # ── Degrees-of-freedom guard ─────────────────────────────────────
+        # A model with k free parameters needs strictly more data points
+        # than k for a meaningful (non-degenerate) residual sum of squares;
+        # otherwise curve_fit can converge to a near-zero-RSS fit purely
+        # because it has enough parameters to pass through every point,
+        # which makes its AIC artificially win against simpler models with
+        # no biological meaning behind it. Require at least 2 residual
+        # degrees of freedom. This matters most for modified_gompertz
+        # (k=6) and richards (k=5) on short/sparse raw-lab curves.
+        if len(t) < int(spec.n_params) + 2:
+            aic_table.append({"model": name, "aic": float("nan"), "status": "insufficient_points"})
             continue
 
         # ── Multi-start fit ───────────────────────────────────────────────

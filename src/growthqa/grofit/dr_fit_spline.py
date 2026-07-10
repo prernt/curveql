@@ -274,11 +274,19 @@ def dr_fit_spline(
                 "method": "4pl_fallback",
                 "dr_monotonic": True,
                 "lam_method": "4pl",
-                # EC50 in transformed x (same scale as x-axis of fitted curve)
+                # 4PL is parameterized directly in concentration units (EC50 is
+                # itself a concentration-scale parameter) and, unlike the spline,
+                # doesn't need a transform to handle multi-order-of-magnitude
+                # concentration ranges -- intentionally fit on raw concentration
+                # regardless of x_transform. No R equivalent exists for this
+                # fallback to be consistent with (Grofit R's own parametric DR
+                # path reuses the growth-curve model family, not a Hill model,
+                # and its authors recommend the dedicated `drc` package instead).
                 "ec50_x_transformed": ec50_4pl,
-                # EC50 in original concentration units (Grofit EC50.orig)
-                "ec50": ec50_4pl,   # 4PL operates on original x, no inversion needed
+                "ec50": ec50_4pl,
+                "ec50_fit_space": "raw_concentration",
                 "ec50_status": "OK",
+                
                 "y_ec50": model_fit.get("y_ec50", np.nan),
                 "endpoint_low": model_fit.get("bottom", np.nan),
                 "endpoint_high": model_fit.get("top", np.nan),

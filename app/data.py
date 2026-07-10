@@ -108,7 +108,6 @@ def build_run_info(
     mode_label: str, file_stem: str, predicting_model: str,
     grofit_opts: GrofitOptions, settings: InferenceSettings,
     stage2_config: dict | None,
-    stage1_feature_list: list | None,
     user_selections: dict,
 ) -> dict:
     """Single, canonical pipeline-config record for the Auditing zip.
@@ -137,10 +136,8 @@ def build_run_info(
         },
         "preprocessing": {
             k: preprocessing[k] for k in [
-                "input_is_raw", "global_blank", "step", "min_points",
-                "tmax_hours", "auto_tmax", "auto_tmax_coverage",
-                "clip_negatives", "smooth_method", "smooth_window", "normalize",
-            ] if k in preprocessing
+                 "input_is_raw", "global_blank", "min_points", "tmax_hours",
+             ] if k in preprocessing
         },
         "stage2_thresholds": {
             k: stage2_full[k] for k in [
@@ -157,11 +154,6 @@ def build_run_info(
             "bootstrap_method": normalize_bootstrap_method(grofit_opts.bootstrap_method),
         } if grofit_opts else None,
         "user_selections": user_selections,
-        "stage1_feature_list": stage1_feature_list,
-        "environment": {
-            "python": sys.version, "numpy": np.__version__,
-            "pandas": pd.__version__, "sklearn": sklearn.__version__,
-        },
     }
 
 def build_classifier_output(
@@ -264,7 +256,6 @@ def build_export_zip(
     run_info = build_run_info(
         mode_label=mode_label, file_stem=file_stem, predicting_model=predicting_model,
         grofit_opts=grofit_opts, settings=settings, stage2_config=stage2_config,
-        stage1_feature_list=_feature_list,
         user_selections={
             "gc_bootstrap": selected_gc_bootstrap if mode_label == "MANUAL" else auto_bootstrap_scope,
             "preferred_fit": selected_preferred_fit if mode_label == "MANUAL" else auto_preferred_model,
@@ -372,8 +363,12 @@ def build_export_zip(
             zf.writestr("gcBoot.csv", _csv(gc_boot_out))
         if isinstance(dr_fit_out,  pd.DataFrame) and not dr_fit_out.empty:
             zf.writestr("drFit.csv",  _csv(dr_fit_out))
-        if isinstance(dr_boot_out, pd.DataFrame) and not dr_boot_out.empty:
-            zf.writestr("drBoot.csv", _csv(dr_boot_out))
+        # drBoot.csv intentionally not shipped: Grofit R's drFit summary
+        # table already includes the drBootSpline bootstrap columns
+        # (meanEC50, sdEC50, ci90/ci95 EC50 bounds) as part of the SAME
+        # table -- R never produces a separate bootstrap file. drFit.csv
+        # already contains every value drBoot.csv would (verified
+        # identical), so this matches R's actual output structure exactly.
 
         # --- per-curve HTML plots ---
         n_plots = 0
@@ -457,14 +452,11 @@ def build_export_zip(
         az.writestr("run_info.json", json.dumps(run_info, indent=2))
         az.writestr("classifier_audit.csv", _csv(classifier_df))
         az.writestr("grofit_input.csv", _csv(grofit_input_df))
-        if isinstance(gc_audit_out, pd.DataFrame) and not gc_audit_out.empty and "add.id" in gc_audit_out.columns and isinstance(classifier_df, pd.DataFrame) and not classifier_df.empty and "Test Id" in classifier_df.columns:
-            _diag_cols = [c for c in [
-                "n_points_observed", "max_gap_hours", "missing_frac_on_grid", "too_sparse"
-            ] if c in classifier_df.columns]
-            if _diag_cols:
-                _diag = classifier_df[["Test Id"] + _diag_cols].drop_duplicates("Test Id")
-                gc_audit_out = gc_audit_out.merge(_diag, left_on="add.id", right_on="Test Id", how="left", suffixes=("", "_diag"),).drop(columns=["Test Id"], errors="ignore")
-
+        if isinstance(gc_audit_out, pd.DataFrame) and not gc_audit_out.empty:
+            # n_points_observed / max_gap_hours / missing_frac_on_grid / too_sparse
+            # are intentionally NOT merged in here -- they're already present,
+            # unduplicated, in classifier_audit.csv (same zip, joined on
+            # Test Id == add.id). One canonical source per fact.
             az.writestr("gc_audit.csv", _csv(gc_audit_out))
         if isinstance(dr_audit_out, pd.DataFrame) and not dr_audit_out.empty:
             az.writestr("dr_audit.csv", _csv(dr_audit_out))

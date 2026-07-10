@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 from typing import Dict, Any, Optional, Literal
 
-from .gc_fit_spline import spar_to_lam,gc_fit_spline
+from growthqa.grofit.gc_fit_spline import spar_to_lam, gc_fit_spline
 
 
 BootstrapMethod = Literal["pairs", "residual"]

@@ -42,10 +42,8 @@ def export_results_zip(
         _write(dr_audit, "drAudit.csv")
 
     # item 12: manifest with version + timestamp
-    from .pipeline import PIPELINE_VERSION, SCHEMA_VERSION
+    
     manifest = pd.DataFrame([{
-        "pipeline_version": PIPELINE_VERSION,
-        "schema_version": SCHEMA_VERSION,
         "generated_utc": datetime.datetime.utcnow().isoformat(),
         "gc_curves": len(gc_fit),
         "dr_experiments": len(dr_fit),

@@ -2,7 +2,7 @@
 from __future__ import annotations
 import numpy as np
 from typing import Optional, Dict, Any
-from .dr_fit_spline import dr_fit_spline
+from growthqa.grofit.dr_fit_spline import dr_fit_spline
 
 
 def dr_boot_spline(
@@ -53,7 +53,8 @@ def dr_boot_spline(
             s_num = np.nan
         locked_lam = float(s_num) if np.isfinite(s_num) else None
 
-    ec50s = []
+    ec50s: list[float] = []
+    n_total = 0
     for _ in range(B):
         idx = rng.integers(0, n, size=n)
         xb = x[idx]
@@ -73,12 +74,29 @@ def dr_boot_spline(
             enforce_monotonic=True,
             fallback_to_4pl=True,
         )
+        # ec50 = fit.get("ec50", np.nan) if fit.get("success") else np.nan
+        # try:
+        #     ec50 = float(ec50)
+        # except Exception:
+        #     ec50 = np.nan
+        # if np.isfinite(ec50):
+        #     ec50s.append(ec50)
         ec50 = fit.get("ec50", np.nan) if fit.get("success") else np.nan
+        ec50_status = str(fit.get("ec50_status", "")).strip().upper()
         try:
             ec50 = float(ec50)
         except Exception:
             ec50 = np.nan
-        if np.isfinite(ec50):
+        # NO_CROSS_NEAREST means the fitted curve for this resample never
+        # actually reached the target response -- dr_fit_spline falls back
+        # to the nearest grid boundary rather than returning "no EC50".
+        # Including that fallback value in the bootstrap distribution
+        # silently pins the CI tails to the resampled concentration range
+        # boundary instead of genuine EC50 sampling variability, and since
+        # that boundary doesn't depend on x_transform, it can make the
+        # reported CI identical across runs with materially different fits.
+        n_total += 1
+        if np.isfinite(ec50) and ec50_status != "NO_CROSS_NEAREST":
             ec50s.append(ec50)
 
     ec50s = np.asarray(ec50s, float)
@@ -97,4 +115,8 @@ def dr_boot_spline(
         "ec50_lo": float(np.quantile(ec50s, alpha)),
         "ec50_hi": float(np.quantile(ec50s, 1.0 - alpha)),
         "ec50_samples_n": int(len(ec50s)),
+        # fraction of resamples that were genuine target crossings, not
+        # NO_CROSS_NEAREST boundary fallbacks -- low values mean the CI
+        # above is resting on fewer real EC50 estimates than B suggests
+        "ec50_crossing_rate": float(len(ec50s) / n_total) if n_total > 0 else float("nan"),
     }

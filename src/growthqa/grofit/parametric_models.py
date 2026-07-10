@@ -48,17 +48,24 @@ def gompertz(t, y0, A, mu, lam):
     return y0 + A * np.exp(-np.exp(np.e * mu / A * (lam - t) + 1.0))
 
 
-def modified_gompertz(t, y0, A, mu, lam):
+def modified_gompertz(t, y0, A, mu, lam, alpha, t_shift):
     """
-    Grofit Table 1 modified Gompertz — identical formula to plain Gompertz
-    but kept as a separate entry so the model-selection loop tries it
-    independently (it can converge to a different local minimum).
+    Grofit Table 1 modified Gompertz (Kahm et al. 2010):
+        y(t) = A * exp(-exp(mu*e/A*(lam-t)+1)) + A * exp(alpha*(t - t_shift))
+
+    Adds a second exponential term to plain Gompertz, enabling a delayed
+    second increase after the first plateau -- i.e. biphasic/diauxic
+    growth. alpha controls the strength (slope) of the second increase,
+    t_shift its onset time. On a genuinely single-phase curve this model
+    cannot improve materially on plain Gompertz's RSS, so AIC's +2k
+    penalty (k=6 vs k=4) makes it lose by design; it only wins when the
+    curve's shape actually contains a second phase.
     """
     e = np.e
     A_safe = max(float(A), 1e-12)
     inner = np.clip((mu * e / A_safe) * (lam - t) + 1.0, -50, 50)
-    return y0 + A_safe * np.exp(-np.exp(inner))
-
+    second = np.clip(alpha * (t - t_shift), -50, 50)
+    return y0 + A_safe * np.exp(-np.exp(inner)) + A_safe * np.exp(second)
 
 def richards(t, y0, A, mu, lam, nu):
     """
@@ -165,9 +172,9 @@ def get_model_specs(t: np.ndarray, y: np.ndarray) -> Dict[str, ModelSpec]:
              np.array([y0_max, A_max, 50.0, lam_max]))
         ),
         "modified_gompertz": ModelSpec(
-            "modified_gompertz", modified_gompertz, 4,
-            (np.array([y0_min, 0.0, 1e-6, lam_min]),
-             np.array([y0_max, A_max, 50.0, lam_max]))
+            "modified_gompertz", modified_gompertz, 6,
+            (np.array([y0_min, 0.0, 1e-6, lam_min, 1e-6, 0.0]),
+             np.array([y0_max, A_max, 50.0, lam_max, 10.0, t_max * 1.5]))
         ),
         "richards": ModelSpec(
             "richards", richards, 5,
@@ -206,10 +213,17 @@ def start_values_lowess(t: np.ndarray, y: np.ndarray) -> Dict[str, np.ndarray]:
     # nu starting value for Richards
     nu_guess = 1.0
 
+    # alpha / t_shift starting values for modified Gompertz's second term:
+    # a modest secondary rate, onset placed late in the observed window
+    # (a second phase, by definition, follows the first).
+    alpha_guess   = float(np.clip(mu_guess * 0.3, 1e-6, 10.0))
+    t_shift_guess = float(np.nanpercentile(tt, 75))
+
     starts = {
         "logistic":          np.array([y0_guess, A_guess, mu_guess, lam_guess], dtype=float),
         "gompertz":          np.array([y0_guess, A_guess, mu_guess, lam_guess], dtype=float),
-        "modified_gompertz": np.array([y0_guess, A_guess, mu_guess, lam_guess], dtype=float),
+        "modified_gompertz": np.array([y0_guess, A_guess, mu_guess, lam_guess,
+                                        alpha_guess, t_shift_guess], dtype=float),
         "richards":          np.array([y0_guess, A_guess, mu_guess, lam_guess, nu_guess], dtype=float),
     }
     return starts

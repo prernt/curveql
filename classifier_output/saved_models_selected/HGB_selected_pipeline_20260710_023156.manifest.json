@@ -1,10 +1,10 @@
 {
-  "created_at": "2026-07-09T23:38:30",
+  "created_at": "2026-07-10T02:31:56",
   "python_version": "3.11.0",
   "sklearn_version": "1.2.0",
   "numpy_version": "1.23.5",
   "joblib_version": "1.2.0",
-  "model_file": "HGB_selected_pipeline_20260709_233829.joblib",
+  "model_file": "HGB_selected_pipeline_20260710_023156.joblib",
   "feature_columns": [
     "observed_tmax",
     "n_points_observed",
