@@ -788,7 +788,8 @@ def run_grofit_pipeline(
             "dr.monotonic":     bool(chosen.get("dr_monotonic", True)),
             "ec50.status":      chosen.get("ec50_status", "OK"),
             "x_transform_norm": chosen.get("x_transform_norm", dr_x_transform or "none"),
-            "ec50_fit_space": chosen.get("ec50_fit_space", "transformed"),  # "raw_concentration"
+            "ec50_fit_space": chosen.get("ec50_fit_space",
+                    "raw_concentration" if chosen_name == "4pl" else "transformed"),  # "raw_concentration"
                                 # when the 4PL fallback won -- x_transform_norm
                                 # above still reports what was requested for the
                                 # spline stage, this reports what the winning
