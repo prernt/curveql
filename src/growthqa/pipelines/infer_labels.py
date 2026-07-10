@@ -528,6 +528,11 @@ def run_label_inference_from_uploaded_wide(
             global_blank=None,
             # blank_status_csv=None,
             blank_default="ALREADY",
+            smooth_method=TRAIN_SMOOTH_METHOD,
+            smooth_window=TRAIN_SMOOTH_WINDOW,
+            normalize=TRAIN_NORMALIZE,
+            loglevel="ERROR",
+            augment_trunc=False,
 
         )
 
