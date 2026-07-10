@@ -212,6 +212,10 @@ DR_AUDIT_COLS: list[str] = [
                              # EC50.low/EC50.high above rest on fewer real
                              # crossings than the requested B suggests. NaN
                              # when bootstrap didn't run.
+    "ec50_fit_space",        # "transformed" (spline path) or "raw_concentration"
+                             # (4PL fallback, per item 14) -- so log.x/
+                             # x_transform_norm don't misleadingly imply a
+                             # transform was actually used when it wasn't.
 
    # internal normalised transform key used by the fitter
     # schema / reproducibility

@@ -138,8 +138,24 @@ def dr_fit_spline(
               Prevents GCV from producing a straight line on sparse data.
               Equivalent to R smooth.spline's implicit df constraint.
     """
+    # x = np.asarray(conc, float)
+    # y = np.asarray(resp, float)
+
+    # y_transform_norm = (y_transform or "none").lower()
+    # if y_transform_norm in {"log1p", "ln1p"}:
+    #     if np.nanmin(y) < -1.0:
+    #         return {"success": False, "message": "y has values < -1 for log1p", "fail_reason": "dr_y_transform_invalid_lt_minus1", "n": int(len(x))}
+    #     y = np.log1p(y)
+    # elif y_transform_norm in {"log10", "log"}:
+    #     if np.nanmin(y) <= 0.0:
+    #         return {"success": False, "message": "y has values <= 0 for log10", "fail_reason": "dr_y_transform_invalid_nonpositive", "n": int(len(x))}
+    #     y = np.log10(y)
     x = np.asarray(conc, float)
     y = np.asarray(resp, float)
+    y_raw = y.copy()  # preserved for the 4PL fallback below, which -- like the
+                       # x-transform (see xt below) -- must fit on the untransformed
+                       # response (item 14/18: Hill equation is natively scaled by
+                       # its own E0/E_inf parameters and shouldn't be pre-transformed).
 
     y_transform_norm = (y_transform or "none").lower()
     if y_transform_norm in {"log1p", "ln1p"}:
@@ -150,6 +166,7 @@ def dr_fit_spline(
         if np.nanmin(y) <= 0.0:
             return {"success": False, "message": "y has values <= 0 for log10", "fail_reason": "dr_y_transform_invalid_nonpositive", "n": int(len(x))}
         y = np.log10(y)
+
     else:
         y_transform_norm = "none"
 
@@ -161,6 +178,8 @@ def dr_fit_spline(
     mask = np.isfinite(x) & np.isfinite(y)
     x = x[mask]
     y = y[mask]
+    y_raw = y_raw[mask]
+
 
     if len(x) < 4:
         return {
@@ -262,7 +281,8 @@ def dr_fit_spline(
 
     # --- Monotonicity fallback to 4PL ---
     if enforce_monotonic and ((not monotonic) or is_linear) and fallback_to_4pl:
-        model_fit = dr_fit_model(x, y)
+        model_fit = dr_fit_model(x, y_raw)
+
         if model_fit.get("success"):
             ec50_4pl = model_fit.get("ec50", np.nan)
             return {
