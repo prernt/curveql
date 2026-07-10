@@ -221,18 +221,23 @@ def dr_fit_spline(
     xt = xt[order]
     x = x[order]
     y = y[order]
+    y_raw = y_raw[order]
+
 
     xt_u, inv = np.unique(xt, return_inverse=True)
     if xt_u.size != xt.size:
         y_sum = np.zeros_like(xt_u, dtype=float)
         x_sum = np.zeros_like(xt_u, dtype=float)
+        y_raw_sum = np.zeros_like(xt_u, dtype=float)
         cnt = np.zeros_like(xt_u, dtype=float)
         np.add.at(y_sum, inv, y)
         np.add.at(x_sum, inv, x)
+        np.add.at(y_raw_sum, inv, y_raw)
         np.add.at(cnt, inv, 1.0)
         xt = xt_u
         y = y_sum / np.maximum(cnt, 1.0)
         x = x_sum / np.maximum(cnt, 1.0)
+        y_raw = y_raw_sum / np.maximum(cnt, 1.0)
 
     if len(xt) < 5:
         return {
