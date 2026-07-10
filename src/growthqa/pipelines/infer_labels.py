@@ -37,7 +37,11 @@ from growthqa.stage2.late_window import (
     compute_evidence_scores,
     compute_stage2_checker_status,
 )
-
+from growthqa.io.tidy import (
+    extract_conc_from_curve_id as _extract_conc_from_curve_id,
+    find_concentration_col as _find_concentration_col,
+    wide_to_grofit_tidy as _canonical_wide_to_grofit_tidy,
+)
 
 # ============================================================
 # Compatibility helpers
@@ -218,33 +222,33 @@ def _safe_get_setting(settings: Any, key: str, default: Any) -> Any:
 # ============================================================
 # Curve key helpers
 # ============================================================
-def _extract_conc_from_curve_id(curve_id: str) -> float | None:
-    if curve_id is None:
-        return None
-    s = str(curve_id)
-    m = re.search(
-        r"\[(?:\s*Conc\s*=\s*)?([0-9]+(?:\.[0-9]+)?)\s*\]",
-        s,
-        flags=re.IGNORECASE,
-    )
-    if not m:
-        return None
-    try:
-        return float(m.group(1))
-    except Exception:
-        return None
+# def _extract_conc_from_curve_id(curve_id: str) -> float | None:
+#     if curve_id is None:
+#         return None
+#     s = str(curve_id)
+#     m = re.search(
+#         r"\[(?:\s*Conc\s*=\s*)?([0-9]+(?:\.[0-9]+)?)\s*\]",
+#         s,
+#         flags=re.IGNORECASE,
+#     )
+#     if not m:
+#         return None
+#     try:
+#         return float(m.group(1))
+#     except Exception:
+#         return None
 
 
-def _find_concentration_col(df: pd.DataFrame) -> str | None:
-    candidates = ["concentration", "Concentration", "conc", "Conc", "dose", "Dose", "drug_conc", "DrugConc"]
-    for c in candidates:
-        if c in df.columns:
-            return c
-    lower_map = {str(c).lower(): c for c in df.columns}
-    for c in candidates:
-        if c.lower() in lower_map:
-            return lower_map[c.lower()]
-    return None
+# def _find_concentration_col(df: pd.DataFrame) -> str | None:
+#     candidates = ["concentration", "Concentration", "conc", "Conc", "dose", "Dose", "drug_conc", "DrugConc"]
+#     for c in candidates:
+#         if c in df.columns:
+#             return c
+#     lower_map = {str(c).lower(): c for c in df.columns}
+#     for c in candidates:
+#         if c.lower() in lower_map:
+#             return lower_map[c.lower()]
+#     return None
 
 
 def _fmt_conc_for_key(v: object) -> str:
@@ -296,28 +300,34 @@ def wide_original_to_grofit_tidy(
     file_tag: str,
     test_id_col: str = "Test Id",
 ) -> pd.DataFrame:
+    """Thin wrapper kept for backward compatibility with existing callers.
+    Delegates to growthqa.io.tidy.wide_to_grofit_tidy, the single canonical
+    implementation (previously this function had its own independent copy
+    of the same melt logic -- see that module's docstring)."""
+   
     if test_id_col not in wide_original.columns:
         raise ValueError(f"Expected '{test_id_col}' in canonical wide input.")
 
-    time_cols = [c for c in wide_original.columns if parse_time_from_header(str(c)) is not None]
-    if not time_cols:
-        raise ValueError("No time columns detected in wide_original (expected T#.## (h) headers).")
+    # time_cols = [c for c in wide_original.columns if parse_time_from_header(str(c)) is not None]
+    # if not time_cols:
+    #     raise ValueError("No time columns detected in wide_original (expected T#.## (h) headers).")
 
-    conc_col = _find_concentration_col(wide_original)
-    id_vars = [test_id_col] + ([conc_col] if conc_col is not None else [])
-    tidy = wide_original.melt(id_vars=id_vars, value_vars=time_cols, var_name="_time_label", value_name="y")
-    tidy["time"] = tidy["_time_label"].map(lambda s: float(parse_time_from_header(str(s))))
-    tidy.drop(columns=["_time_label"], inplace=True)
-    tidy["test_id"] = str(file_tag)
-    tidy["curve_id"] = tidy[test_id_col].astype(str)
-    if conc_col is None:
-        tidy["concentration"] = tidy[test_id_col].astype(str).map(_extract_conc_from_curve_id)
-        tidy["concentration"] = pd.to_numeric(tidy["concentration"], errors="coerce").fillna(0.0)
-    else:
-        tidy["concentration"] = pd.to_numeric(tidy[conc_col], errors="coerce").fillna(0.0)
-    tidy["y"] = pd.to_numeric(tidy["y"], errors="coerce")
-    tidy = tidy.dropna(subset=["time", "y"])
-    return tidy[["test_id", "curve_id", "concentration", "time", "y"]]
+    # conc_col = _find_concentration_col(wide_original)
+    # id_vars = [test_id_col] + ([conc_col] if conc_col is not None else [])
+    # tidy = wide_original.melt(id_vars=id_vars, value_vars=time_cols, var_name="_time_label", value_name="y")
+    # tidy["time"] = tidy["_time_label"].map(lambda s: float(parse_time_from_header(str(s))))
+    # tidy.drop(columns=["_time_label"], inplace=True)
+    # tidy["test_id"] = str(file_tag)
+    # tidy["curve_id"] = tidy[test_id_col].astype(str)
+    # if conc_col is None:
+    #     tidy["concentration"] = tidy[test_id_col].astype(str).map(_extract_conc_from_curve_id)
+    #     tidy["concentration"] = pd.to_numeric(tidy["concentration"], errors="coerce").fillna(0.0)
+    # else:
+    #     tidy["concentration"] = pd.to_numeric(tidy[conc_col], errors="coerce").fillna(0.0)
+    # tidy["y"] = pd.to_numeric(tidy["y"], errors="coerce")
+    # tidy = tidy.dropna(subset=["time", "y"])
+    
+    return _canonical_wide_to_grofit_tidy(wide_original, file_tag=file_tag, test_id_col=test_id_col)
 
 
 # ============================================================

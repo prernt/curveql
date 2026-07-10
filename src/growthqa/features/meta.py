@@ -156,7 +156,7 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
             "growth_phase_duration": np.nan,
             "symmetry_factor": np.nan,
             "num_slope_sign_changes": np.nan,
-            "multi_phase_flag": (np.nan if pd.isna(multi_phase_flag) else int(bool(multi_phase_flag))),
+            "multi_phase_flag": np.nan,
             "logistic_fit_mse": np.nan,
             "logistic_AIC": np.nan,
             "gompertz_AIC": np.nan,

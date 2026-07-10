@@ -29,6 +29,14 @@ AUDIT_META_FEATURES: list[str] = [
     "monotonicity_fraction",
     "roughness",
     "final_OD",
+    "initial_OD",              # NEW — was silently missing
+    "growth_phase_duration",   # NEW — was silently missing
+    "multi_phase_flag",        # NEW — was silently missing
+    "noise_residual_std",      # NEW — was silently missing
+    "noise_residual_std_is_fallback",
+    "n_features_missing",
+    "feature_missing_frac",
+
 ]
 
 # ============================================================
