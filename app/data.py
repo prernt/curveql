@@ -32,55 +32,59 @@ from utils import (
 from growthqa.preprocess.timegrid import parse_time_from_header, get_time_columns
 from growthqa.io.audit import build_classifier_audit_df
 from growthqa.io.grofit_io import build_grofit_input_df as _build_grofit_artifact
+from growthqa.grofit.pipeline import run_grofit_pipeline
+from growthqa.viz.payloads import build_curve_payloads, build_dr_payload
+from plots import make_overlay_plot_payload, make_dr_plot
+from growthqa.io.tidy import find_concentration_col, wide_to_grofit_tidy
 
-def find_concentration_col(df: pd.DataFrame) -> str | None:
-    candidates = ["concentration", "Concentration", "conc", "Conc",
-                   "dose", "Dose", "drug_conc", "DrugConc"]
-    for c in candidates:
-        if c in df.columns: return c
-    lower_map = {str(c).lower(): c for c in df.columns}
-    for c in candidates:
-        if c.lower() in lower_map: return lower_map[c.lower()]
-    return None
+# def find_concentration_col(df: pd.DataFrame) -> str | None:
+#     candidates = ["concentration", "Concentration", "conc", "Conc",
+#                    "dose", "Dose", "drug_conc", "DrugConc"]
+#     for c in candidates:
+#         if c in df.columns: return c
+#     lower_map = {str(c).lower(): c for c in df.columns}
+#     for c in candidates:
+#         if c.lower() in lower_map: return lower_map[c.lower()]
+#     return None
 
 
-def wide_to_grofit_tidy(
-    wide_df: pd.DataFrame, *, file_tag: str, test_id_col: str = "Test Id",
-) -> pd.DataFrame:
-    """
-    Convert canonical wide input (one row per curve, time-column headers)
-    to the tidy format required by the Grofit pipeline:
-    ``test_id, curve_id, concentration, time, y``.
+# def wide_to_grofit_tidy(
+#     wide_df: pd.DataFrame, *, file_tag: str, test_id_col: str = "Test Id",
+# ) -> pd.DataFrame:
+#     """
+#     Convert canonical wide input (one row per curve, time-column headers)
+#     to the tidy format required by the Grofit pipeline:
+#     ``test_id, curve_id, concentration, time, y``.
 
-    ``curve_id`` is kept as the full prefixed Test Id so it matches
-    classifier outputs without splitting.
-    """
-    if test_id_col not in wide_df.columns:
-        raise ValueError(f"Expected '{test_id_col}' column in wide input.")
-    # time_cols = [c for c in wide_df.columns if parse_time_from_header(str(c)) is not None]
-    time_cols = get_time_columns(wide_df)
-    if not time_cols:
-        raise ValueError("No time columns found (expected T#.## (h) headers).")
-    conc_col = find_concentration_col(wide_df)
-    id_vars  = [test_id_col] + ([conc_col] if conc_col else [])
+#     ``curve_id`` is kept as the full prefixed Test Id so it matches
+#     classifier outputs without splitting.
+#     """
+#     if test_id_col not in wide_df.columns:
+#         raise ValueError(f"Expected '{test_id_col}' column in wide input.")
+#     # time_cols = [c for c in wide_df.columns if parse_time_from_header(str(c)) is not None]
+#     time_cols = get_time_columns(wide_df)
+#     if not time_cols:
+#         raise ValueError("No time columns found (expected T#.## (h) headers).")
+#     conc_col = find_concentration_col(wide_df)
+#     id_vars  = [test_id_col] + ([conc_col] if conc_col else [])
 
-    tidy = wide_df.melt(id_vars=id_vars, value_vars=time_cols,
-                        var_name="_tl", value_name="y")
-    tidy["time"]     = tidy["_tl"].map(lambda s: float(parse_time_from_header(str(s))))
-    tidy["test_id"]  = str(file_tag)
-    tidy["curve_id"] = tidy[test_id_col].astype(str)
-    tidy.drop(columns=["_tl"], inplace=True)
+#     tidy = wide_df.melt(id_vars=id_vars, value_vars=time_cols,
+#                         var_name="_tl", value_name="y")
+#     tidy["time"]     = tidy["_tl"].map(lambda s: float(parse_time_from_header(str(s))))
+#     tidy["test_id"]  = str(file_tag)
+#     tidy["curve_id"] = tidy[test_id_col].astype(str)
+#     tidy.drop(columns=["_tl"], inplace=True)
 
-    if conc_col is None:
-        tidy["concentration"] = (
-            tidy[test_id_col].astype(str).map(extract_conc_from_curve_id)
-        )
-    else:
-        tidy["concentration"] = pd.to_numeric(tidy[conc_col], errors="coerce")
-    tidy["concentration"] = pd.to_numeric(tidy["concentration"], errors="coerce").fillna(0.0)
-    tidy["y"] = pd.to_numeric(tidy["y"], errors="coerce")
-    tidy = tidy.dropna(subset=["time", "y"])
-    return tidy[["test_id", "curve_id", "concentration", "time", "y"]]
+#     if conc_col is None:
+#         tidy["concentration"] = (
+#             tidy[test_id_col].astype(str).map(extract_conc_from_curve_id)
+#         )
+#     else:
+#         tidy["concentration"] = pd.to_numeric(tidy[conc_col], errors="coerce")
+#     tidy["concentration"] = pd.to_numeric(tidy["concentration"], errors="coerce").fillna(0.0)
+#     tidy["y"] = pd.to_numeric(tidy["y"], errors="coerce")
+#     tidy = tidy.dropna(subset=["time", "y"])
+#     return tidy[["test_id", "curve_id", "concentration", "time", "y"]]
 
 def init_review_df(out_df: pd.DataFrame, wide_df: pd.DataFrame) -> pd.DataFrame:
     df = out_df.copy()
@@ -227,10 +231,6 @@ def build_export_zip(
     No file appears in both zips.
     """
 
-    from growthqa.grofit.pipeline import run_grofit_pipeline
-    from growthqa.viz.payloads import build_curve_payloads, build_dr_payload
-    from plots import make_overlay_plot_payload, make_dr_plot
-
     # zip_name = f"{mode_label}_{datetime.now().strftime('%m.%d.%y')}_{file_stem}.zip"
     date_tag = datetime.now().strftime("%m.%d.%y")
     results_name  = f"{mode_label}_{date_tag}_{file_stem}.zip"
@@ -348,8 +348,17 @@ def build_export_zip(
                 dr_boot_out = dr_res.get("dr_boot", pd.DataFrame())
                 dr_audit_out = dr_res.get("dr_audit", pd.DataFrame())
 
-            except Exception:
-                dr_fit_out = dr_boot_out = pd.DataFrame()
+            except Exception  as e:
+                # Previously silent: any exception here (a bad grofit_opts
+                # combination, an edge case in the DR fit, etc.) discarded
+                # every already-computed DR result with no trace anywhere
+                # the user or console would see it. At minimum, surface it.
+                print(
+                    f"DR export failed for this run ({type(e).__name__}: {e}); "
+                    "drFit/drBoot/drAudit will be empty in the export. "
+                    "Continuing with GC results only.",
+                    file=sys.stderr,
+                )
                 dr_fit_out = dr_boot_out = dr_audit_out = pd.DataFrame()
         else:
             dr_audit_out = pd.DataFrame()
