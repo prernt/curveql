@@ -102,12 +102,14 @@ def render_top_controls() -> dict:
                 st.warning("No trained model found. Click Train/Refresh Classifier.")
 
             # Blank handling
-            input_is_raw = st.checkbox("Input is raw (apply blank subtraction)", value=False)
-            global_blank_str = ""
-            if input_is_raw:
-                global_blank_str = st.text_input(
-                    "Global blank value (optional)", value="",
-                    help="Leave blank to calculate dynamically from the first few points of each curve.")
+            # Blank handling removed — all uploads assumed already blank-subtracted.
+
+            # input_is_raw = st.checkbox("Input is raw (apply blank subtraction)", value=False)
+            # global_blank_str = ""
+            # if input_is_raw:
+            #     global_blank_str = st.text_input(
+            #         "Global blank value (optional)", value="",
+            #         help="Leave blank to calculate dynamically from the first few points of each curve.")
 
             # Grofit parameters
             st.markdown("**Grofit Parameters**")
@@ -198,8 +200,8 @@ def render_top_controls() -> dict:
 
         st.session_state["grofit_opts"] = grofit_opts
         settings = InferenceSettings(
-            input_is_raw = bool(input_is_raw),
-            global_blank = safe_float(global_blank_str, None) if input_is_raw else None,
+            # input_is_raw = bool(input_is_raw),
+            # global_blank = safe_float(global_blank_str, None) if input_is_raw else None,
         )
 
     # ----------------------------------------------------------------- right

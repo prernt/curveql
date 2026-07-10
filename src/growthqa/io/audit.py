@@ -85,18 +85,32 @@ def _with_curve_id(df: pd.DataFrame, *, concentration_lookup: dict | None = None
         out["Concentration"] = out["Test Id"].map(concentration_lookup)
         out["Concentration"] = pd.to_numeric(out["Concentration"], errors="coerce")
 
+    # if "Concentration" in out.columns:
+    #     conc_txt = out["Concentration"].map(lambda v: f"{float(v):g}" if np.isfinite(v) else "")
+    #     has_conc = out["Concentration"].notna()
+    #     enc = out["Test Id"].map(_test_id_encodes_conc)
+
+    #     out["curve_id"] = out["Test Id"]
+    #     out["curve_key"] = out["Test Id"]
+    #     use_append = has_conc & (~enc)
+    #     out.loc[use_append, "curve_key"] = out.loc[use_append, "Test Id"] + "||" + conc_txt.loc[use_append]
+    # else:
+    #     out["curve_id"] = out["Test Id"]
+    #     out["curve_key"] = out["Test Id"]
+
     if "Concentration" in out.columns:
         conc_txt = out["Concentration"].map(lambda v: f"{float(v):g}" if np.isfinite(v) else "")
         has_conc = out["Concentration"].notna()
         enc = out["Test Id"].map(_test_id_encodes_conc)
 
-        out["curve_id"] = out["Test Id"]
+        # No separate curve_id here: it was always identical to Test Id
+        # in every branch (item 16), so curve_key is now the sole identifier.
         out["curve_key"] = out["Test Id"]
         use_append = has_conc & (~enc)
         out.loc[use_append, "curve_key"] = out.loc[use_append, "Test Id"] + "||" + conc_txt.loc[use_append]
     else:
-        out["curve_id"] = out["Test Id"]
         out["curve_key"] = out["Test Id"]
+
 
     return out
 
@@ -142,7 +156,7 @@ def build_classifier_audit_df(
         "Test Id",
         "Concentration",
         "curve_key",
-        "curve_id",
+        # "curve_id",
         "Pred Label",
         "Pred Confidence",
         # "Predicted S1 Label",

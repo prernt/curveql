@@ -662,6 +662,14 @@ def run_grofit_pipeline(
         # selecting "log10" in the UI silently had no effect on the fit.
         log_y = 1 if str(dr_y_transform or "").strip().lower() in {"log1p", "log10", "log"} else 0
         resp_for_fit = resp_arr
+        
+        # dr_y_transform intentionally never reaches dr_fit_model (4PL/Hill):
+        # standard Hill-equation dose-response fitting uses the raw response
+        # scale, since the sigmoid's own asymptote parameters (E0, E_inf)
+        # absorb the response scale; only the model-free spline path (Grofit
+        # R's native drFitSpline behaviour) benefits from a y-transform.
+        # Mirrors the x-transform-invariance decision for the same model.
+
 
         spline_fit = dr_fit_spline(
             conc_arr, resp_for_fit,

@@ -136,7 +136,7 @@ def build_run_info(
         },
         "preprocessing": {
             k: preprocessing[k] for k in [
-                 "input_is_raw", "global_blank", "min_points", "tmax_hours",
+                  "min_points", "tmax_hours",
              ] if k in preprocessing
         },
         "stage2_thresholds": {

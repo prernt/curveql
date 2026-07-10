@@ -413,8 +413,9 @@ def render_results(results: dict) -> None:  # noqa: C901 (long but cohesive)
                                raw_r.iloc[0], time_cols_original,
                                proc_r.iloc[0], time_cols_final,
                                title=str(chosen),
-                               input_is_raw=settings.input_is_raw,
-                               global_blank=settings.global_blank))
+                            #    input_is_raw=settings.input_is_raw,
+                            #    global_blank=settings.global_blank)
+                           ))
                     fig.update_layout(height=600)
                     st.plotly_chart(fig, use_container_width=True)
 
@@ -556,9 +557,9 @@ def render_results(results: dict) -> None:  # noqa: C901 (long but cohesive)
             render_metric_row("Too Sparse",
                               _fmt_val(bool(out_row.get("too_sparse")) if "too_sparse" in out_row else "NA"))
 
-            render_metric_row("Blank subtraction mode",
-                              _fmt_val("RAW (applied)" if settings.input_is_raw
-                                       else "ALREADY BLANK SUBTRACTED (so not applied)"))
+            # render_metric_row("Blank subtraction mode",
+            #                   _fmt_val("RAW (applied)" if settings.input_is_raw
+            #                            else "ALREADY BLANK SUBTRACTED (so not applied)"))
             st.markdown("</div>", unsafe_allow_html=True)
 
             with st.expander("About the Processed plot ...", expanded=False):

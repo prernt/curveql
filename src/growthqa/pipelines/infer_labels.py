@@ -511,7 +511,8 @@ def run_label_inference_from_uploaded_wide(
         tmp_wide_csv = Path(td) / "wide_input.csv"
         wide_early_raw_df.drop(columns=["curve_key"], errors="ignore").to_csv(tmp_wide_csv, index=False)
 
-        blank_default = "RAW" if bool(_safe_get_setting(settings, "input_is_raw", False)) else "ALREADY"
+        # Blank handling removed: uploads are always treated as already
+        # blank-subtracted, so this path never subtracts anything.
         raw_merged_df, final_merged_df, meta_df = run_merge_preprocess_meta(
             inputs=[str(tmp_wide_csv)],
             out_raw=None,
@@ -522,16 +523,12 @@ def run_label_inference_from_uploaded_wide(
             step=TRAIN_STEP_HOURS,
             min_points=MIN_POINTS,
             tmax_hours=TRAIN_TMAX_HOURS,
-            blank_subtracted=True,
+            blank_subtracted=False,
             clip_negatives=False,
-            global_blank=_safe_get_setting(settings, "global_blank", None),
+            global_blank=None,
             # blank_status_csv=None,
-            blank_default=blank_default,
-            smooth_method=TRAIN_SMOOTH_METHOD,
-            smooth_window=TRAIN_SMOOTH_WINDOW,
-            normalize=TRAIN_NORMALIZE,
-            loglevel="ERROR",
-            augment_trunc=False,
+            blank_default="ALREADY",
+
         )
 
     meta_df = _attach_curve_key(meta_df)

@@ -46,10 +46,12 @@ from growthqa.config import (
 
 @dataclass
 class InferenceSettings:
+   
     """Pre-processing options, partially exposed in the UI."""
-    # Blank handling
-    input_is_raw: bool         = False
-    global_blank: float | None = None
+    # Blank handling removed: all uploads are treated as already
+    # blank-subtracted. See GrowthQA_Pipeline_Verification_Status, Test 11.
+    # input_is_raw: bool         = False
+    # global_blank: float | None = None
 
     # Fixed pipeline defaults (not shown in UI) -- pinned to the same values
     # training uses (growthqa.config), so an uploaded curve is preprocessed

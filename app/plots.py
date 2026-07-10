@@ -63,7 +63,7 @@ def generate_fast_bootstrap_bands(
 def make_overlay_plot(
     raw_row: pd.Series, raw_time_cols: list[str],
     proc_row: pd.Series, proc_time_cols: list[str],
-    *, title: str, input_is_raw: bool, global_blank: float | None,
+    *, title: str,
 ) -> go.Figure:
 
     def _xy(row, cols):
@@ -80,8 +80,8 @@ def make_overlay_plot(
 
     raw_x, raw_y   = _xy(raw_row, raw_time_cols)
     proc_x, proc_y = _xy(proc_row, proc_time_cols)
-    if input_is_raw and global_blank is not None:
-        raw_y = raw_y - float(global_blank)
+    # if input_is_raw and global_blank is not None:
+    #     raw_y = raw_y - float(global_blank)
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=raw_x,  y=raw_y,  mode="lines+markers", name="Raw"))
