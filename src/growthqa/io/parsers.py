@@ -153,16 +153,27 @@ def convert_simple_wide_to_long(df: pd.DataFrame, file_stem: str) -> Optional[pd
     return standardize_long(long, file_stem)
 
 
-def parse_time_table_any(path: str, sheet_name=0) -> Optional[pd.DataFrame]:
+def parse_time_table_any(path: str, sheet_name=0, df: Optional[pd.DataFrame] = None) -> Optional[pd.DataFrame]:
     """
     Simple table:
       time column + multiple curve columns.
     Works for CSV and Excel.
+    ``df``: optional pre-loaded DataFrame, to avoid re-reading the same CSV
+    from disk when a caller already has it loaded (see
+    wide_format.py::parse_any_file_to_long, which previously read the same
+    CSV twice -- once here, once again in its own fallback branch when this
+    function returned None).
     """
-    if str(path).lower().endswith((".xlsx", ".xls")):
-        df = pd.read_excel(path, sheet_name=sheet_name)
-    else:
-        df = pd.read_csv(path)
+    # if str(path).lower().endswith((".xlsx", ".xls")):
+    #     df = pd.read_excel(path, sheet_name=sheet_name)
+    # else:
+    #     df = pd.read_csv(path)
+
+    if df is None:
+        if str(path).lower().endswith((".xlsx", ".xls")):
+            df = pd.read_excel(path, sheet_name=sheet_name)
+        else:
+            df = pd.read_csv(path)
 
     if df.empty or df.shape[1] < 2:
         return None

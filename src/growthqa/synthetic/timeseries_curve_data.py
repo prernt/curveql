@@ -50,6 +50,11 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
+from growthqa.grofit.parametric_models import (
+    logistic as _grofit_logistic,
+    gompertz as _grofit_gompertz,
+    richards as _grofit_richards,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -59,14 +64,22 @@ import pandas as pd
 # A = carrying capacity, mu = max growth rate, lambda = lag time.
 
 def logistic(t, A, mu, lam):
-    return A / (1.0 + np.exp((4.0 * mu / A) * (lam - t) + 2.0))
-
-
+    """Thin wrapper around the canonical Grofit Table 1 logistic
+    (growthqa.grofit.parametric_models.logistic), y0 fixed at 0 since
+    synthetic curves have no separate baseline term added afterward.
+    Previously an independent reimplementation that happened to already
+    match; kept as a single source of truth now instead of by coincidence."""
+    return _grofit_logistic(t, 0.0, A, mu, lam)
+ 
 def gompertz(t, A, mu, lam):
-    return A * np.exp(-np.exp((mu * np.e / A) * (lam - t) + 1.0))
+
+    """Thin wrapper around the canonical Grofit Table 1 Gompertz. This one
+    already matched exactly (verified numerically); consolidated anyway so
+    it can't silently drift the way Richards did."""
+    return _grofit_gompertz(t, 0.0, A, mu, lam) 
 
 
-def modified_gompertz(t, A, mu, lam, alpha, tshift):
+def bounded_modified_gompertz(t, A, mu, lam, alpha, tshift):
     """Zwietering Gompertz with a bounded, saturating late adjustment.
 
     The primary term is the standard A, mu, lambda Gompertz (Zwietering et al. 1990),
@@ -75,6 +88,10 @@ def modified_gompertz(t, A, mu, lam, alpha, tshift):
     drift of the stationary level without introducing a second growth phase. The
     curve is monotone non-decreasing, stays bounded by ``A * (1 + alpha)``, and
     reaches a finite plateau, so it remains a valid single-phase curve.
+    Deliberately NOT unified with grofit.parametric_models.modified_gompertz:
+    that one is an unbounded second exponential representing genuine diauxic
+    growth, this one is bounded and single-phase by construction. Sharing a
+    name previously hid that difference; kept separate on purpose
     """
     primary = A * np.exp(-np.exp((mu * np.e / A) * (lam - t) + 1.0))
     onset = np.clip(t - tshift, 0.0, None)
@@ -83,7 +100,19 @@ def modified_gompertz(t, A, mu, lam, alpha, tshift):
 
 
 def richards(t, A, mu, lam, nu):
-    return A * (1.0 + nu * np.exp((mu * (1.0 + nu) / A) * (lam - t))) ** (-1.0 / nu)
+    """Thin wrapper around the canonical Grofit Table 1 Richards formula.
+
+    IMPORTANT CHANGE: previously this was an independent reimplementation
+    using a different (non-Grofit) Richards parameterization -- verified
+    numerically to disagree with growthqa.grofit.parametric_models.richards
+    by up to ~0.41 in absolute y on a unit-amplitude curve, i.e. a
+    different curve family, not a rounding difference. Synthetic curves
+    labeled "Richards" were therefore not actually shaped like what
+    Grofit's own Richards model fits. Regenerating timeseries_wide_SD1.csv
+    and retraining after this change will produce different Richards-
+    subtype curves than the currently committed file.
+    """
+    return _grofit_richards(t, 0.0, A, mu, lam, nu)
 
 
 def diauxic(t, A1, mu1, lam1, A2, mu2, lam2):
@@ -98,7 +127,7 @@ def flat_line(t, baseline):
 MODEL_SPECS = {
     "Logistic": (logistic, ["A", "mu", "lam"]),
     "Gompertz": (gompertz, ["A", "mu", "lam"]),
-    "ModifiedGompertz": (modified_gompertz, ["A", "mu", "lam", "alpha", "tshift"]),
+    "ModifiedGompertz": (bounded_modified_gompertz, ["A", "mu", "lam", "alpha", "tshift"]),
     "Richards": (richards, ["A", "mu", "lam", "nu"]),
     "Diauxic": (diauxic, ["A1", "mu1", "lam1", "A2", "mu2", "lam2"]),
     "Flat": (flat_line, ["baseline"]),

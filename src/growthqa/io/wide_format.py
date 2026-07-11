@@ -10,7 +10,7 @@ from growthqa.io.parsers import (
     convert_grofit_v_wide_to_long,
     convert_simple_wide_to_long,
     parse_excel_any,
-    parse_time_table_any,
+    parse_time_table_any
 )
 from growthqa.io.time_parse import make_time_header
 
@@ -64,13 +64,15 @@ def parse_any_file_to_long(path: str) -> pd.DataFrame:
         return parse_excel_any(path)
 
     if ext in {".csv"}:
+        df = pd.read_csv(path)
+
         # Try as simple time table first
-        out = parse_time_table_any(path)
+        out = parse_time_table_any(path, df=df)
         if out is not None:
             return out
 
         # Try already-wide synthetic
-        df = pd.read_csv(path)
+        # df = pd.read_csv(path)
         long = convert_simple_wide_to_long(df, p.stem)
         if long is not None:
             return long

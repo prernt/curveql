@@ -7,6 +7,11 @@ import pandas as pd
 
 from growthqa.preprocess.timegrid import parse_time_from_header
 from growthqa.preprocess.transform import rolling_smooth
+from growthqa.grofit.parametric_models import (
+    logistic as _grofit_logistic,
+    gompertz as _grofit_gompertz,
+    richards as _grofit_richards,
+)
 
 _HAS_SCIPY = False
 try:
@@ -20,22 +25,15 @@ except Exception:
 
 
 def _logistic_model(t, A, mu, lam):
-    return A / (1.0 + np.exp(-mu * (t - lam)))
+    return _grofit_logistic(t, 0.0, A, mu, lam)
 
 
 def _gompertz_model(t, A, mu, lam):
-    inner = (mu * np.e / max(A, 1e-9)) * (lam - t) + 1.0
-    inner = np.clip(inner, -50, 50)
-    return A * np.exp(-np.exp(inner))
+    return _grofit_gompertz(t, 0.0, A, mu, lam)
 
 
 def _richards_model(t, A, mu, lam, nu):
-    nu = max(float(nu), 1e-3)
-    expo = np.clip(-mu * (t - lam), -50.0, 50.0)
-    term = nu * np.exp(expo)
-    log_denom = np.clip((1.0 / nu) * np.log1p(term), -50.0, 50.0)
-    denom = np.exp(log_denom)
-    return A / denom
+    return _grofit_richards(t, 0.0, A, mu, lam, nu)
 
 
 def _flat_model(t, c):
