@@ -30,7 +30,7 @@ commonmark==0.9.1
 condacolab==0.1.7
 contourpy==1.0.6
 cryptography==48.0.1
--e git+https://github.com/prernt/curveql.git@3cf8307fdb98c7186a6f5705b0b89645b010dc8e#egg=curveql
+-e git+https://github.com/prernt/curveql.git@08731335c7ed34abcb210b63ea3fe4fd9516be94#egg=curveql
 cycler==0.11.0
 debugpy==1.6.7
 decorator==5.1.1

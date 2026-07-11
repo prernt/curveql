@@ -1,12 +1,15 @@
 [
-  "largest_drop_frac",
-  "auc_per_hour",
-  "growth_phase_duration",
-  "multi_phase_flag",
-  "max_slope",
+  "observed_tmax",
+  "n_points_observed",
+  "max_gap_hours",
+  "initial_OD",
   "final_OD",
-  "net_change_per_hour",
+  "max_slope",
+  "auc_per_hour",
   "lag_time_est",
-  "roughness",
-  "max_gap_hours"
+  "growth_phase_duration",
+  "monotonicity_fraction",
+  "largest_drop_frac",
+  "multi_phase_flag",
+  "noise_residual_std"
 ]
