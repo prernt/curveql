@@ -11,11 +11,11 @@ readme = "README.md"
 requires-python = ">=3.9,<3.13"
 
 dependencies = [
-    "numpy",
-    "pandas",
-    "scipy",
+    "numpy==1.23.5",
+    "pandas==1.5.2",
+    "scipy==1.15.3",
     "statsmodels",
-    "scikit-learn",
+    "scikit-learn==1.2.0",
     "joblib",
     "openpyxl",
     "matplotlib",
