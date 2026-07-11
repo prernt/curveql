@@ -1,0 +1,22 @@
+{
+  "created_at": "2026-07-12T00:06:55",
+  "python_version": "3.11.0",
+  "sklearn_version": "1.2.0",
+  "numpy_version": "1.23.5",
+  "joblib_version": "1.2.0",
+  "model_file": "LR_selected_pipeline_20260712_000655.joblib",
+  "feature_columns": [
+    "largest_drop_frac",
+    "auc_per_hour",
+    "growth_phase_duration",
+    "multi_phase_flag",
+    "max_slope",
+    "final_OD",
+    "net_change_per_hour",
+    "lag_time_est",
+    "roughness",
+    "max_gap_hours"
+  ],
+  "group_split_col": "base_curve_id",
+  "val_balanced_accuracy": 0.7685071939390851
+}
