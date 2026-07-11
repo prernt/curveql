@@ -32,5 +32,5 @@ def train_classifier_from_meta_file(
     return train_from_meta_csv(
         meta_csv=meta_csv_path,
         art_dir=models_out_dir,
-        selected_features=STAGE1_SELECTED_FEATURES,
+        selected_features=selected_features if selected_features is not None else STAGE1_SELECTED_FEATURES,
     )

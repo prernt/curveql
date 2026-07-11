@@ -113,6 +113,7 @@ def build_run_info(
     grofit_opts: GrofitOptions, settings: InferenceSettings,
     stage2_config: dict | None,
     user_selections: dict,
+    classifier_features: list[str] | None = None,
 ) -> dict:
     """Single, canonical pipeline-config record for the Auditing zip.
 
@@ -153,11 +154,28 @@ def build_run_info(
                 "artifact_score_threshold", "decline_score_threshold",
             ] if k in stage2_full
         },
+        # "grofit_config": {
+        #     **grofit_opts.__dict__,
+        #     "bootstrap_method": normalize_bootstrap_method(grofit_opts.bootstrap_method),
+        # } if grofit_opts else None,
+        # "user_selections": user_selections,
         "grofit_config": {
             **grofit_opts.__dict__,
             "bootstrap_method": normalize_bootstrap_method(grofit_opts.bootstrap_method),
         } if grofit_opts else None,
+        # Which Stage 1 features the deployed classifier was actually
+        # trained on for THIS run (read from stage1_features.json at export
+        # time in build_export_zip, not re-read from growthqa.config -- the
+        # saved model may predate a later config change). None if the file
+        # was missing or unreadable, so a reader can tell "not recorded"
+        # apart from "recorded as empty".
+        "classifier": {
+            "selected_features": classifier_features,
+            "n_features": len(classifier_features) if classifier_features is not None else None,
+        },
         "user_selections": user_selections,
+    }
+
     }
 
 def build_classifier_output(
@@ -253,9 +271,24 @@ def build_export_zip(
     except Exception:
         pass
 
+    # run_info = build_run_info(
+    #     mode_label=mode_label, file_stem=file_stem, predicting_model=predicting_model,
+    #     grofit_opts=grofit_opts, settings=settings, stage2_config=stage2_config,
+    #     user_selections={
+    #         "gc_bootstrap": selected_gc_bootstrap if mode_label == "MANUAL" else auto_bootstrap_scope,
+    #         "preferred_fit": selected_preferred_fit if mode_label == "MANUAL" else auto_preferred_model,
+    #         "response_metric": selected_response_metric if mode_label == "MANUAL" else auto_response_metric,
+    #         "dr_bootstrap": selected_dr_bootstrap if mode_label == "MANUAL" else auto_dr_bootstrap,
+    #         "export_label_filter": export_label_filter,
+    #         "export_dr_include_unsure": bool(export_dr_include_unsure),
+    #         "export_dr_include_invalid": bool(export_dr_include_invalid),
+    #     },
+    # )
+
     run_info = build_run_info(
         mode_label=mode_label, file_stem=file_stem, predicting_model=predicting_model,
         grofit_opts=grofit_opts, settings=settings, stage2_config=stage2_config,
+        classifier_features=_feature_list,
         user_selections={
             "gc_bootstrap": selected_gc_bootstrap if mode_label == "MANUAL" else auto_bootstrap_scope,
             "preferred_fit": selected_preferred_fit if mode_label == "MANUAL" else auto_preferred_model,

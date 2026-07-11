@@ -279,10 +279,7 @@ LEAKAGE_COLS = {"best_model_name"}
 # roughly every N hours") to consider it well-covered; LATE_WINDOW_MAX_MISSING_FRAC
 # is the ceiling on how much of that expected density can be missing before
 # has_late_data is withheld even though min_late_points is satisfied.
-#
-# ---------------------------------------------------------------------------
-# Stage 2 late-window density gates
-# ---------------------------------------------------------------------------
+
 # Two companion gates, both duration/density-aware rather than flat counts:
 #
 # 1) LATE_WINDOW_REFERENCE_STEP_HOURS / LATE_WINDOW_MAX_MISSING_FRAC -- is

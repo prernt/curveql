@@ -165,12 +165,43 @@ def _retire_previous_run_artifacts(art_dir: Path) -> List[str]:
     return removed
 
 
-def build_models() -> Dict[str, Pipeline]:
+# def build_models() -> Dict[str, Pipeline]:
+#     lr = Pipeline(
+#         steps=[
+#             ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
+#             ("scaler", StandardScaler()),
+#             ("clf", LogisticRegression(max_iter=500, class_weight="balanced", random_state=RANDOM_STATE)),
+#         ]
+#     )
+#     rf = Pipeline(
+#         steps=[
+#             ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
+#             ("clf", RandomForestClassifier(
+#                 n_estimators=600,
+#                 random_state=RANDOM_STATE,
+#                 class_weight="balanced_subsample",
+#                 n_jobs=-1,
+#             )),
+#         ]
+#     )
+#     hgb = Pipeline(
+#         steps=[
+#             ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
+#             ("clf", HistGradientBoostingClassifier(
+#                 max_depth=6,
+#                 learning_rate=0.08,
+#                 random_state=RANDOM_STATE,
+#             )),
+#         ]
+#     )
+#     return {"LR": lr, "RF": rf, "HGB": hgb}
+
+def build_models(*, random_state: int = RANDOM_STATE) -> Dict[str, Pipeline]:
     lr = Pipeline(
         steps=[
             ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
             ("scaler", StandardScaler()),
-            ("clf", LogisticRegression(max_iter=500, class_weight="balanced", random_state=RANDOM_STATE)),
+            ("clf", LogisticRegression(max_iter=500, class_weight="balanced", random_state=random_state)),
         ]
     )
     rf = Pipeline(
@@ -178,7 +209,7 @@ def build_models() -> Dict[str, Pipeline]:
             ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
             ("clf", RandomForestClassifier(
                 n_estimators=600,
-                random_state=RANDOM_STATE,
+                random_state=random_state,
                 class_weight="balanced_subsample",
                 n_jobs=-1,
             )),
@@ -190,7 +221,7 @@ def build_models() -> Dict[str, Pipeline]:
             ("clf", HistGradientBoostingClassifier(
                 max_depth=6,
                 learning_rate=0.08,
-                random_state=RANDOM_STATE,
+                random_state=random_state,
             )),
         ]
     )
@@ -247,12 +278,14 @@ def _slice_metrics(df_eval: pd.DataFrame, y_true: pd.Series, y_pred: np.ndarray,
     return rows
 
 
-def _group_split(X: pd.DataFrame, y: pd.Series, groups: pd.Series) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _group_split(
+    X: pd.DataFrame, y: pd.Series, groups: pd.Series, *, random_state: int = RANDOM_STATE
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     idx = np.arange(len(X))
-    gss_outer = GroupShuffleSplit(n_splits=1, test_size=0.20, random_state=RANDOM_STATE)
+    gss_outer = GroupShuffleSplit(n_splits=1, test_size=0.20, random_state=random_state)
     trainval_idx, test_idx = next(gss_outer.split(idx, y, groups))
 
-    gss_inner = GroupShuffleSplit(n_splits=1, test_size=0.25, random_state=RANDOM_STATE + 1)
+    gss_inner = GroupShuffleSplit(n_splits=1, test_size=0.25, random_state=random_state + 1)
     inner_groups = groups.iloc[trainval_idx]
     train_rel, val_rel = next(gss_inner.split(trainval_idx, y.iloc[trainval_idx], inner_groups))
     train_idx = trainval_idx[train_rel]
@@ -321,6 +354,7 @@ def train_from_meta_csv(
     write_lockfile: bool = True,
     selected_features: List[str] | None = None,
     retire_previous_runs: bool = True,
+    random_state: int = RANDOM_STATE,
 ) -> dict:
     meta_csv = Path(meta_csv)
     art_dir = Path(art_dir)
@@ -344,13 +378,13 @@ def train_from_meta_csv(
         X = X[selected_features].copy()
         feature_cols = list(selected_features)
 
-    train_idx, val_idx, test_idx = _group_split(X, y, groups)
+    train_idx, val_idx, test_idx = _group_split(X, y, groups, random_state=random_state)
 
     overlap = set(groups.iloc[train_idx]).intersection(set(groups.iloc[test_idx]))
     if overlap:
         raise RuntimeError("Group split leakage detected: base_curve_id appears in both train and test.")
 
-    models = build_models()
+    models = build_models(random_state=random_state)
     results, fitted = fit_and_eval(models, X, y, eval_df, train_idx, val_idx, test_idx)
 
     if run_tag is None:
@@ -443,26 +477,23 @@ def evaluate_split_stability(
     Use this to report e.g. "balanced accuracy: 0.83 +/- 0.02 (n=5 seeds)"
     in the thesis instead of a single point estimate.
     """
+# --- NEW ---
     tmp_root = Path(tmp_root)
     rows = []
-    original_seed = RANDOM_STATE
-    try:
-        for i, seed in enumerate(seeds):
-            globals()["RANDOM_STATE"] = seed  # build_models() / _group_split() read this at call time
-            art_dir = tmp_root / f"seed_{seed}_{i}"
-            train_from_meta_csv(
-                meta_csv=meta_csv,
-                art_dir=art_dir,
-                run_tag=f"stability_{seed}_{i}",
-                write_lockfile=False,
-                selected_features=selected_features,
-            )
-            summary = pd.read_csv(art_dir / f"train_results_selected_stability_{seed}_{i}.csv")
-            test_overall = summary[(summary["split"] == "test") & (summary["slice_col"] == "overall")].copy()
-            test_overall["seed"] = seed
-            rows.append(test_overall)
-    finally:
-        globals()["RANDOM_STATE"] = original_seed
+    for i, seed in enumerate(seeds):
+        art_dir = tmp_root / f"seed_{seed}_{i}"
+        train_from_meta_csv(
+            meta_csv=meta_csv,
+            art_dir=art_dir,
+            run_tag=f"stability_{seed}_{i}",
+            write_lockfile=False,
+            selected_features=selected_features,
+            random_state=seed,
+        )
+        summary = pd.read_csv(art_dir / f"train_results_selected_stability_{seed}_{i}.csv")
+        test_overall = summary[(summary["split"] == "test") & (summary["slice_col"] == "overall")].copy()
+        test_overall["seed"] = seed
+        rows.append(test_overall)
 
     all_runs = pd.concat(rows, ignore_index=True)
 
