@@ -176,8 +176,6 @@ def build_run_info(
         "user_selections": user_selections,
     }
 
-    }
-
 def build_classifier_output(
     *, wide_df: pd.DataFrame, out_df: pd.DataFrame,
     review_df: pd.DataFrame | None, manual_review_mode: bool,
