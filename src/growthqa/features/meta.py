@@ -233,10 +233,10 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
     # would let interpolation manufacture its way past the threshold this
     # check exists to enforce.
 
-    if od.size >= 8:
+    if n_points_observed >= 8:
         base = rolling_smooth(od, window=5)
         noise_residual_std = float(np.nanstd(od - base))
-    elif od.size >= 4:
+    elif n_points_observed >= 4:
         # Successive-difference noise estimator (von Neumann 1941; Rice 1984):
         # for i.i.d. noise on a locally slowly-varying signal, Var(y[i+1]-y[i]) ≈ 2·sigma^2,
         # so sigma ≈ std(diff(y)) / sqrt(2). Coarser than the rolling-smooth-residual
@@ -287,7 +287,7 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
     # Gated on n_points_observed, not od.size -- see noise_residual_std above
     # for why od.size is the wrong quantity to check here.
 
-    if od.size >= 7:
+    if n_points_observed >= 7:
         multi_phase_flag = False
         if range_od > 1e-9:
             local_max_idxs = []
