@@ -225,6 +225,14 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
     roughness = float(np.nanstd(dy)) if dy.size > 0 else np.nan
     noise_residual_std = np.nan
     noise_residual_std_is_fallback = False
+    # Gated on n_points_observed (true raw count), NOT od.size: od is built
+    # from this row's time columns after upstream regridding/interpolation
+    # (STEP_HOURS=0.5 grid), so od.size measures post-interpolation density,
+    # not real information content. A curve with 4 true observations across
+    # an 8h span regrids to ~18 finite points -- gating on od.size >= 8
+    # would let interpolation manufacture its way past the threshold this
+    # check exists to enforce.
+
     if od.size >= 8:
         base = rolling_smooth(od, window=5)
         noise_residual_std = float(np.nanstd(od - base))
@@ -276,6 +284,9 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
             num_slope_sign_changes = int(np.sum(np.diff(nz) != 0))
 
     multi_phase_flag = np.nan
+    # Gated on n_points_observed, not od.size -- see noise_residual_std above
+    # for why od.size is the wrong quantity to check here.
+
     if od.size >= 7:
         multi_phase_flag = False
         if range_od > 1e-9:
@@ -297,7 +308,7 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
     flat_AIC = np.nan
     best_model_AIC = np.nan
     best_model_name = np.nan
-    if rich_meta and _HAS_SCIPY and t.size >= 5:
+    if rich_meta and _HAS_SCIPY and n_points_observed >= 5:
         fit_residuals: Dict[str, Tuple[np.ndarray, int]] = {}
         try:
             popt_log, _ = curve_fit(_logistic_model, t, od, p0=[max_od, 1.0, float(np.median(t))], maxfev=2000)
