@@ -93,7 +93,7 @@ def run_merge_preprocess_meta(
     normalize: str = "NONE",  # NONE, MAX, MINMAX
     # logging
     loglevel: str = "INFO",
-    rich_meta: bool = False,
+    # rich_meta: bool = False,
     # augmentation
     augment_trunc: bool = False,
     trunc_horizons: Optional[List[float]] = None,
@@ -214,7 +214,7 @@ def run_merge_preprocess_meta(
         normalize_mode=str(normalize),
     )
 
-    meta_df = build_metadata_from_wide(final_merged_df, rich_meta=bool(rich_meta))
+    meta_df = build_metadata_from_wide(final_merged_df)
 
     # Write artifacts with their fixed column contracts.
     if out_raw:
@@ -283,7 +283,7 @@ def build_training_meta(
             smooth_method=TRAIN_SMOOTH_METHOD,
             smooth_window=TRAIN_SMOOTH_WINDOW,
             normalize=TRAIN_NORMALIZE,
-            rich_meta=False,
+            # rich_meta=False,
             augment_trunc=True,
             trunc_horizons=TRAIN_TRUNC_HORIZONS,
             trunc_per_curve=TRAIN_TRUNC_PER_CURVE,

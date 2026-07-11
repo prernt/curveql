@@ -102,11 +102,35 @@ def build_model_matrix(meta: pd.DataFrame, label_col: str) -> Tuple[pd.DataFrame
         elif X[c].dtype == "object":
             X[c] = pd.to_numeric(X[c], errors="coerce")
 
+    # X = X.select_dtypes(include=[np.number]).copy()
+    # if X.shape[1] == 0:
+    #     raise ValueError("No numeric training features found after dropping identifier/leakage columns.")
+    # feature_cols = list(X.columns)
+    # --- NEW ---
     X = X.select_dtypes(include=[np.number]).copy()
+
+    # Restrict the candidate universe to the documented Stage-1 feature pool,
+    # never to "every numeric column that happens to survive identifier/
+    # leakage dropping". training_meta.csv also carries Grofit parametric-fit
+    # diagnostics (logistic_AIC, gompertz_AIC, richards_AIC, flat_AIC,
+    # logistic_fit_mse, best_model_AIC) computed in features/meta.py for
+    # analysis purposes -- how well a parametric model fits a curve is itself
+    # informative about validity, so treating these as ML candidate features
+    # would be a leakage path. Without this line, that path was only closed
+    # by every CALLER remembering to pass selected_features explicitly (the
+    # app and auto_train_classifier.py do; this module's own main() does not).
+    pool_cols = [c for c in STAGE1_CANDIDATE_POOL if c in X.columns]
+    missing_pool_cols = [c for c in STAGE1_CANDIDATE_POOL if c not in X.columns]
+    if missing_pool_cols:
+        raise ValueError(
+            "training_meta.csv is missing expected Stage 1 candidate features: "
+            + ", ".join(missing_pool_cols)
+        )
+    X = X[pool_cols]
+
     if X.shape[1] == 0:
         raise ValueError("No numeric training features found after dropping identifier/leakage columns.")
     feature_cols = list(X.columns)
-
     eval_cols = [c for c in ["source_type", "train_horizon", "is_censored", "too_sparse"] if c in df.columns]
     eval_df = df[eval_cols].copy() if eval_cols else pd.DataFrame(index=df.index)
     return X, y, groups, feature_cols, eval_df
@@ -282,7 +306,10 @@ def write_requirements_lock(out_path: str):
 
 
 def main():
-    out = train_from_meta_csv(meta_csv=TRAIN_META_CSV, art_dir=ART_DIR)
+    out = train_from_meta_csv(
+        meta_csv=TRAIN_META_CSV, art_dir=ART_DIR, selected_features=STAGE1_SELECTED_FEATURES,
+    )
+
     print("Training complete:", json.dumps(out, indent=2))
 
 

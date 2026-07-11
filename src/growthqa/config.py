@@ -170,14 +170,65 @@ STAGE1_FEATURE_GROUPS = {
 }
 STAGE1_CANDIDATE_POOL = [f for group in STAGE1_FEATURE_GROUPS.values() for f in group]
 
-# Production feature set. Evaluated once, on a held-out test set untouched by
-# any selection step, against Top-10 and Top-8 (by cross-validated
-# permutation importance) and a greedy, CV-stability-voted subset -- see
-# Stage1_Feature_Analysis_And_Selection.ipynb, Section 7. The full 16-feature
-# pool won outright (best or tied-best balanced accuracy, F1, and ROC-AUC
-# across LR/RF/HGB), so nothing is dropped from it for production.
-STAGE1_SELECTED_FEATURES = list(STAGE1_CANDIDATE_POOL)
+# Production feature set. Reduced from the full 16-feature candidate pool
+# after cross-validated permutation-importance ranking (7-fold
+# StratifiedGroupKFold, RF; see Stage1_Feature_Analysis_And_Selection.ipynb,
+# Section 6) showed the bottom ~6 features contribute negligible or negative
+# incremental value (noise_residual_std's mean importance is slightly
+# negative), while the top 8-10 nearly match the full pool's held-out
+# balanced accuracy, F1, and ROC-AUC (Section 7).
+#
+# Both candidate reduced sets are required to keep at least one feature from
+# EACH of the four STAGE1_FEATURE_GROUPS, not just the globally top-ranked
+# features. Each group answers a structurally different question about a
+# curve (can we trust what was measured / where did it start-end / how did
+# it get there / does the trajectory look like real growth), and dropping a
+# whole group would mean Stage 1 asks nothing at all about that failure
+# mode, regardless of how the other three groups happen to rank on one
+# training draw. This matters in particular for observation_quality: it is
+# the feature-level counterpart to the hard MAX_GAP_HOURS_OVERRIDE /
+# MISSING_FRAC_OVERRIDE safety net below, so Stage 1's own features should
+# not be blind to sparsity/gaps just because they ranked low here.
+#
+# STAGE1_TOP_10_FEATURES (ranks 1-10) satisfies this automatically: rank 10
+# (max_gap_hours) is already the best-ranked observation_quality feature, so
+# no override was needed.
+STAGE1_TOP_10_FEATURES = [
+    "largest_drop_frac",       # shape_integrity   (rank 1,  importance 0.1071)
+    "auc_per_hour",            # growth_dynamics   (rank 2,  importance 0.0185)
+    "growth_phase_duration",   # growth_dynamics   (rank 3,  importance 0.0177)
+    "multi_phase_flag",        # shape_integrity   (rank 4,  importance 0.0168)
+    "max_slope",               # growth_dynamics   (rank 5,  importance 0.0133)
+    "final_OD",                # level             (rank 6,  importance 0.0053)
+    "net_change_per_hour",     # growth_dynamics   (rank 7,  importance 0.0041)
+    "lag_time_est",            # growth_dynamics   (rank 8,  importance 0.0039)
+    "roughness",               # shape_integrity   (rank 9,  importance 0.0038)
+    "max_gap_hours",           # observation_quality (rank 10, importance 0.0034)
+]
 
+# STAGE1_TOP_8_FEATURES (ranks 1-8) does NOT cover all four groups on its
+# own -- it has zero observation_quality features. Rank 8 (lag_time_est) is
+# swapped for rank 10 (max_gap_hours): growth_dynamics already has four other
+# representatives above it (auc_per_hour, growth_phase_duration, max_slope,
+# net_change_per_hour), so losing its fifth costs almost nothing
+# (0.0039 vs 0.0034 importance), and it is the minimal edit that restores
+# full group coverage.
+STAGE1_TOP_8_FEATURES = [
+    "largest_drop_frac",       # shape_integrity
+    "auc_per_hour",            # growth_dynamics
+    "growth_phase_duration",   # growth_dynamics
+    "multi_phase_flag",        # shape_integrity
+    "max_slope",               # growth_dynamics
+    "final_OD",                # level
+    "net_change_per_hour",     # growth_dynamics
+    "max_gap_hours",           # observation_quality (swapped in for lag_time_est)
+]
+
+# Active production set. TOP_10 is the default: it reaches full
+# group coverage without any manual override, and its held-out balanced
+# accuracy/F1/ROC-AUC sit closer to the full 16-feature pool than TOP_8's.
+# Switch this single line to STAGE1_TOP_8_FEATURES to use 8 features instead.
+STAGE1_SELECTED_FEATURES = STAGE1_TOP_10_FEATURES
 # ---------------------------------------------------------------------------
 # Column roles for the Stage 1 feature matrix (build_model_matrix)
 # ---------------------------------------------------------------------------

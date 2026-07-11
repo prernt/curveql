@@ -7,47 +7,59 @@ import pandas as pd
 
 from growthqa.preprocess.timegrid import parse_time_from_header
 from growthqa.preprocess.transform import rolling_smooth
-from growthqa.grofit.parametric_models import (
-    logistic as _grofit_logistic,
-    gompertz as _grofit_gompertz,
-    richards as _grofit_richards,
-)
-
-_HAS_SCIPY = False
-try:
-    from scipy.optimize import curve_fit, OptimizeWarning  # type: ignore
-    import warnings
-
-    warnings.filterwarnings("ignore", category=OptimizeWarning)
-    _HAS_SCIPY = True
-except Exception:
-    _HAS_SCIPY = False
 
 
-def _logistic_model(t, A, mu, lam):
-    return _grofit_logistic(t, 0.0, A, mu, lam)
+# _HAS_SCIPY = False
+# try:
+#     from scipy.optimize import curve_fit, OptimizeWarning  # type: ignore
+#     import warnings
+
+#     warnings.filterwarnings("ignore", category=OptimizeWarning)
+#     _HAS_SCIPY = True
+# except Exception:
+#     _HAS_SCIPY = False
 
 
-def _gompertz_model(t, A, mu, lam):
-    return _grofit_gompertz(t, 0.0, A, mu, lam)
+# def _logistic_model(t, A, mu, lam):
+#     return _grofit_logistic(t, 0.0, A, mu, lam)
 
 
-def _richards_model(t, A, mu, lam, nu):
-    return _grofit_richards(t, 0.0, A, mu, lam, nu)
+# def _gompertz_model(t, A, mu, lam):
+#     return _grofit_gompertz(t, 0.0, A, mu, lam)
 
 
-def _flat_model(t, c):
-    return np.full_like(t, float(c), dtype=float)
+# def _richards_model(t, A, mu, lam, nu):
+#     return _grofit_richards(t, 0.0, A, mu, lam, nu)
 
 
-def _aic_from_residuals(resid: np.ndarray, k_params: int) -> float:
-    resid = np.array(resid, dtype=float)
-    n = int(np.sum(np.isfinite(resid)))
-    if n <= 0:
-        return np.nan
-    rss = float(np.nansum(resid ** 2))
-    rss = max(rss, 1e-12)
-    return float(n * np.log(rss / n) + 2 * int(k_params))
+# def _flat_model(t, c):
+#     return np.full_like(t, float(c), dtype=float)
+
+
+# def _aic_from_residuals(resid: np.ndarray, k_params: int) -> float:
+#     resid = np.array(resid, dtype=float)
+#     n = int(np.sum(np.isfinite(resid)))
+#     if n <= 0:
+#         return np.nan
+#     rss = float(np.nansum(resid ** 2))
+#     rss = max(rss, 1e-12)
+#     return float(n * np.log(rss / n) + 2 * int(k_params))
+
+# Parametric-model-fit diagnostics (logistic/Gompertz/Richards AIC via
+# scipy.optimize.curve_fit) used to be computed here behind a rich_meta flag,
+# for exploratory comparison against the Grofit pipeline's own model
+# selection. rich_meta was never set to True anywhere in the codebase (no
+# caller, no CLI flag), so training_meta.csv always carried these seven
+# columns fully NaN. Removed rather than left dead: (1) it drops a live
+# scipy.optimize.curve_fit call path that would silently start running,
+# unvetted, the moment anyone flipped the flag for a one-off analysis, and
+# (2) fit-quality diagnostics computed on a curve are a leakage risk if they
+# were ever treated as an ML candidate feature (see
+# growthqa.classifier.train_from_meta.build_model_matrix, which now hard-caps
+# candidates to STAGE1_CANDIDATE_POOL for the same reason). Grofit's own
+# parametric model selection (logistic/Gompertz/Richards/spline, AIC-based)
+# is unaffected -- it lives in growthqa.grofit and runs independently on
+# curves Stage 1 has already accepted as Valid.
 
 
 def _safe_label(v):
@@ -72,7 +84,7 @@ def _time_cols_from_row(row: pd.Series) -> List[str]:
 # growthqa.stage2.late_window.
 
 
-def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dict[str, object]:
+def compute_features_from_row(row: pd.Series) -> Dict[str, object]:
     time_cols = _time_cols_from_row(row)
     t_all = np.array([parse_time_from_header(str(c)) for c in time_cols], dtype=float)
     y_all = pd.to_numeric(row[time_cols], errors="coerce").to_numpy(dtype=float)
@@ -155,13 +167,13 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
             "symmetry_factor": np.nan,
             "num_slope_sign_changes": np.nan,
             "multi_phase_flag": np.nan,
-            "logistic_fit_mse": np.nan,
-            "logistic_AIC": np.nan,
-            "gompertz_AIC": np.nan,
-            "richards_AIC": np.nan,
-            "flat_AIC": np.nan,
-            "best_model_AIC": np.nan,
-            "best_model_name": np.nan,
+            # "logistic_fit_mse": np.nan,
+            # "logistic_AIC": np.nan,
+            # "gompertz_AIC": np.nan,
+            # "richards_AIC": np.nan,
+            # "flat_AIC": np.nan,
+            # "best_model_AIC": np.nan,
+            # "best_model_name": np.nan,
         }
 
     order = np.argsort(t)
@@ -301,48 +313,48 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
                     if (max_od - mid_min) > 0.2 * range_od:
                         multi_phase_flag = True
 
-    logistic_fit_mse = np.nan
-    logistic_AIC = np.nan
-    gompertz_AIC = np.nan
-    richards_AIC = np.nan
-    flat_AIC = np.nan
-    best_model_AIC = np.nan
-    best_model_name = np.nan
-    if rich_meta and _HAS_SCIPY and n_points_observed >= 5:
-        fit_residuals: Dict[str, Tuple[np.ndarray, int]] = {}
-        try:
-            popt_log, _ = curve_fit(_logistic_model, t, od, p0=[max_od, 1.0, float(np.median(t))], maxfev=2000)
-            resid = od - _logistic_model(t, *popt_log)
-            logistic_fit_mse = float(np.mean(resid ** 2))
-            fit_residuals["Logistic"] = (resid, 3)
-        except Exception:
-            pass
-        try:
-            popt_gom, _ = curve_fit(_gompertz_model, t, od, p0=[max_od, 1.0, float(np.median(t))], maxfev=2000)
-            fit_residuals["Gompertz"] = (od - _gompertz_model(t, *popt_gom), 3)
-        except Exception:
-            pass
-        try:
-            popt_r, _ = curve_fit(_richards_model, t, od, p0=[max_od, 1.0, float(np.median(t)), 1.0], maxfev=4000)
-            fit_residuals["Richards"] = (od - _richards_model(t, *popt_r), 4)
-        except Exception:
-            pass
-        fit_residuals["Flat"] = (od - _flat_model(t, float(np.nanmean(od))), 1)
+    # logistic_fit_mse = np.nan
+    # logistic_AIC = np.nan
+    # gompertz_AIC = np.nan
+    # richards_AIC = np.nan
+    # flat_AIC = np.nan
+    # best_model_AIC = np.nan
+    # best_model_name = np.nan
+    # if rich_meta and _HAS_SCIPY and n_points_observed >= 5:
+    #     fit_residuals: Dict[str, Tuple[np.ndarray, int]] = {}
+    #     try:
+    #         popt_log, _ = curve_fit(_logistic_model, t, od, p0=[max_od, 1.0, float(np.median(t))], maxfev=2000)
+    #         resid = od - _logistic_model(t, *popt_log)
+    #         logistic_fit_mse = float(np.mean(resid ** 2))
+    #         fit_residuals["Logistic"] = (resid, 3)
+    #     except Exception:
+    #         pass
+    #     try:
+    #         popt_gom, _ = curve_fit(_gompertz_model, t, od, p0=[max_od, 1.0, float(np.median(t))], maxfev=2000)
+    #         fit_residuals["Gompertz"] = (od - _gompertz_model(t, *popt_gom), 3)
+    #     except Exception:
+    #         pass
+    #     try:
+    #         popt_r, _ = curve_fit(_richards_model, t, od, p0=[max_od, 1.0, float(np.median(t)), 1.0], maxfev=4000)
+    #         fit_residuals["Richards"] = (od - _richards_model(t, *popt_r), 4)
+    #     except Exception:
+    #         pass
+    #     fit_residuals["Flat"] = (od - _flat_model(t, float(np.nanmean(od))), 1)
 
-        logistic_AIC = _aic_from_residuals(*fit_residuals["Logistic"]) if "Logistic" in fit_residuals else np.nan
-        gompertz_AIC = _aic_from_residuals(*fit_residuals["Gompertz"]) if "Gompertz" in fit_residuals else np.nan
-        richards_AIC = _aic_from_residuals(*fit_residuals["Richards"]) if "Richards" in fit_residuals else np.nan
-        flat_AIC = _aic_from_residuals(*fit_residuals["Flat"]) if "Flat" in fit_residuals else np.nan
-        aics = {
-            "Logistic": logistic_AIC,
-            "Gompertz": gompertz_AIC,
-            "Richards": richards_AIC,
-            "Flat": flat_AIC,
-        }
-        finite_aics = {k: v for k, v in aics.items() if np.isfinite(v)}
-        if finite_aics:
-            best_model_name = min(finite_aics, key=finite_aics.get)
-            best_model_AIC = float(finite_aics[best_model_name])
+    #     logistic_AIC = _aic_from_residuals(*fit_residuals["Logistic"]) if "Logistic" in fit_residuals else np.nan
+    #     gompertz_AIC = _aic_from_residuals(*fit_residuals["Gompertz"]) if "Gompertz" in fit_residuals else np.nan
+    #     richards_AIC = _aic_from_residuals(*fit_residuals["Richards"]) if "Richards" in fit_residuals else np.nan
+    #     flat_AIC = _aic_from_residuals(*fit_residuals["Flat"]) if "Flat" in fit_residuals else np.nan
+    #     aics = {
+    #         "Logistic": logistic_AIC,
+    #         "Gompertz": gompertz_AIC,
+    #         "Richards": richards_AIC,
+    #         "Flat": flat_AIC,
+    #     }
+    #     finite_aics = {k: v for k, v in aics.items() if np.isfinite(v)}
+    #     if finite_aics:
+    #         best_model_name = min(finite_aics, key=finite_aics.get)
+    #         best_model_AIC = float(finite_aics[best_model_name])
 
     return {
         "train_horizon": float(train_horizon),
@@ -372,20 +384,20 @@ def compute_features_from_row(row: pd.Series, *, rich_meta: bool = False) -> Dic
         "symmetry_factor": symmetry_factor,
         "num_slope_sign_changes": num_slope_sign_changes,
         "multi_phase_flag": (np.nan if pd.isna(multi_phase_flag) else int(bool(multi_phase_flag))),
-        "logistic_fit_mse": logistic_fit_mse,
-        "logistic_AIC": logistic_AIC,
-        "gompertz_AIC": gompertz_AIC,
-        "richards_AIC": richards_AIC,
-        "flat_AIC": flat_AIC,
-        "best_model_AIC": best_model_AIC,
-        "best_model_name": best_model_name,
+        # "logistic_fit_mse": logistic_fit_mse,
+        # "logistic_AIC": logistic_AIC,
+        # "gompertz_AIC": gompertz_AIC,
+        # "richards_AIC": richards_AIC,
+        # "flat_AIC": flat_AIC,
+        # "best_model_AIC": best_model_AIC,
+        # "best_model_name": best_model_name,
     }
 
 
-def build_metadata_from_wide(final_wide: pd.DataFrame, *, rich_meta: bool = False) -> pd.DataFrame:
+def build_metadata_from_wide(final_wide: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for _, r in final_wide.iterrows():
-        feats = compute_features_from_row(r, rich_meta=rich_meta)
+        feats = compute_features_from_row(r)
         source_type = str(r.get("source_type", "")).strip().lower()
         if source_type not in {"synthetic", "lab"}:
             fname = str(r.get("FileName", "")).lower()
