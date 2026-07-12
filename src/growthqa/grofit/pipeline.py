@@ -176,6 +176,7 @@ DR_FIT_COLS: list[str] = [
 # Biologist-facing. Mirrors Grofit R drBootSpline output.
 DR_BOOT_COLS: list[str] = [
     "name",
+    "Samples",          # <-- ensure this line exists
     "meanEC50",             # bootstrap mean EC50
     "sdEC50",               # bootstrap SD of EC50
     "EC50.low",             # 95% CI lower (Grofit R column name)
@@ -207,6 +208,10 @@ DR_AUDIT_COLS: list[str] = [
                                        # (100x) and no transform was applied --
                                        # informational flag only, never changes
                                        # what the user selected
+    "boot.method",          # estimator used for the DR bootstrap CI -- must
+                            # match dr.method, or the interval describes a
+                            # different quantity than the reported EC50
+                                   
     "ec50_crossing_rate",   # fraction of DR bootstrap resamples whose fitted
                              # curve genuinely crossed the target response,
                              # vs. NO_CROSS_NEAREST fallback -- low values mean
@@ -753,10 +758,21 @@ def run_grofit_pipeline(
             float(_y_ec50_orig) if np.isfinite(_y_ec50_orig) else y_ec50
         )
 
-        # The 4PL/Hill path ignores dr_y_transform by design, so reporting
-        # log.y = 1 on those rows would misstate what was actually fitted.
-        _fit_used_raw_y = str(chosen.get("method", "")).strip().lower() in {"4pl", "4pl_fallback"}
-        log_y_row = 0 if _fit_used_raw_y else log_y
+        # Which space did the CHOSEN fit actually work in? The 4PL/Hill path
+        # fits raw concentration and raw response by design (its bottom/top
+        # absorb the response scale, and _hill_4pl cannot accept negative
+        # log-transformed x). The spline honours both transforms. Reporting the
+        # requested transform rather than the used one produced rows where EC50
+        # was raw while EC50.low/high were log10 -- a point estimate sitting
+        # outside its own confidence interval.
+        #
+        # chosen_name is authoritative here: dr_fit_model returns no "method"
+        # key, so keying off chosen.get("method") silently missed the direct
+        # 4PL path and only caught the spline's internal 4pl_fallback.
+        _fit_used_raw = str(chosen_name).strip().lower() in {"4pl", "4pl_fallback"}
+
+        log_y_row = 0 if _fit_used_raw else log_y
+        log_x_row = 0 if _fit_used_raw else log_x
 
         # aic_s = spline_fit.get("aic", np.nan)
         # aic_m = model_fit.get("aic",  np.nan)
@@ -784,7 +800,7 @@ def run_grofit_pipeline(
         # DR_FIT row
         dr_rows.append({
             "name":           test_id,
-            "log.x":          log_x,
+            "log.x":          log_x_row,
             "log.y":          log_y_row,
             "Samples":        dr_samples_used,
             "n.conc":         n_conc,
@@ -828,6 +844,7 @@ def run_grofit_pipeline(
                 np.isfinite(_conc_span_orders) and _conc_span_orders >= 2.0
                 and (dr_x_transform or "none").lower() == "none"
             ),
+            "boot.method": None,           # filled in below if bootstrap runs
             "ec50_crossing_rate": np.nan,  # filled in below if bootstrap runs
         })
         _dr_audit_row = dr_audit_rows[-1]  # same dict object -- update in place
@@ -844,11 +861,15 @@ def run_grofit_pipeline(
                 ),
                 x_transform=dr_x_transform,
                 lam=dr_s,
+                # Bootstrap whatever won the AIC comparison. A spline bootstrap
+                # attached to a 4PL point estimate describes a different
+                # estimator than the number it is reported next to.
+                fit_method=("4pl" if _fit_used_raw else "spline"),
+                
             )
 
             _dr_audit_row["ec50_crossing_rate"] = dr_boot_result.get("ec50_crossing_rate", np.nan)
-            # if dr_boot_result.get("success"):
-
+            _dr_audit_row["boot.method"] = dr_boot_result.get("fit_method", None)
             dr_samples_used = int(dr_boot_result.get("ec50_samples_n", 0) or 0)
 
             if dr_boot_result.get("success"):
@@ -858,7 +879,11 @@ def run_grofit_pipeline(
                 # ec50_lo/hi are in original concentration units (dr_boot_spline
                 # collects fit.get("ec50") which is already back-transformed).
                 # Re-apply the forward transform to get the transformed-space CIs.
-                _xt = str(dr_x_transform or "").strip().lower()
+                #If the CHOSEN fit worked in raw concentration (4PL), the
+                # transformed-space CI columns must stay raw too. Otherwise
+                # EC50 (raw) and EC50.low/high (log10) end up in different
+                # spaces and the point estimate falls outside its own interval.
+                _xt = "" if _fit_used_raw else str(dr_x_transform or "").strip().lower()
                 def _fwd(v: float) -> float:
                     if not np.isfinite(v) or v <= 0:
                         return np.nan
@@ -868,7 +893,7 @@ def run_grofit_pipeline(
                         return float(np.log(v))
                     if _xt == "log1p":
                         return float(np.log1p(v))
-                    return float(v)   # "none" — same scale
+                    return float(v)   # "none" / raw-fit — same scale
 
                 dr_boot_rows.append({
                     "name":           test_id,
@@ -894,6 +919,12 @@ def run_grofit_pipeline(
             nm = row["name"]
             if nm in boot_dr_idx.index:
                 br = boot_dr_idx.loc[nm]
+                # Actual genuine EC50 crossings, not the requested dr_boot_B.
+                # The dr_fit row is built before the bootstrap runs, so this
+                # value can only be back-filled here -- same pattern as the
+                # CI columns below, and the same honesty fix nboot.fit already
+                # got on the GC side.
+                dr_fit.at[i, "Samples"]         = br.get("Samples",         0)
                 dr_fit.at[i, "meanEC50"]        = br.get("meanEC50",        np.nan)
                 dr_fit.at[i, "sdEC50"]          = br.get("sdEC50",          np.nan)
                 dr_fit.at[i, "EC50.low"]        = br.get("EC50.low",        np.nan)

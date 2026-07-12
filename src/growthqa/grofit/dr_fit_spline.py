@@ -181,7 +181,7 @@ def dr_fit_spline(
     y_raw = y_raw[mask]
 
 
-    if len(x) < 6:
+    if len(x) < 4:
         return {
             "success": False,
             "message": "Insufficient points for dose-response. Need atleast 6",
@@ -239,7 +239,7 @@ def dr_fit_spline(
         x = x_sum / np.maximum(cnt, 1.0)
         y_raw = y_raw_sum / np.maximum(cnt, 1.0)
 
-    if len(xt) < 6:
+    if len(xt) < 5:
         return {
             "success": False,
             "message": "Insufficient points for dose-response.Need atleast 6",

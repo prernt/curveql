@@ -62,6 +62,7 @@ def dr_fit_model(conc: np.ndarray, resp: np.ndarray) -> Dict[str, Any]:
 
         return {
             "success": True,
+            "method": "4pl",
             "message": "ok",
             "n": int(len(x)),
             "model": "4pl",
