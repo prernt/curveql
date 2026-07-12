@@ -176,7 +176,7 @@ DR_FIT_COLS: list[str] = [
 # Biologist-facing. Mirrors Grofit R drBootSpline output.
 DR_BOOT_COLS: list[str] = [
     "name",
-    "Samples",          # <-- ensure this line exists
+    "Samples",          
     "meanEC50",             # bootstrap mean EC50
     "sdEC50",               # bootstrap SD of EC50
     "EC50.low",             # 95% CI lower (Grofit R column name)
