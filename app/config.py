@@ -36,6 +36,7 @@ from growthqa.config import (
     TMAX_HOURS as _TMAX_HOURS,
     SMOOTH_METHOD as _SMOOTH_METHOD,
     SMOOTH_WINDOW as _SMOOTH_WINDOW,
+    RANDOM_STATE as _RANDOM_STATE,
     NORMALIZE as _NORMALIZE,
 )
 
@@ -85,3 +86,10 @@ class GrofitOptions:
     dr_x_transform: str | None = None
     dr_y_transform: str | None = None
     bootstrap_method: str      = None
+    # Single seed for every stochastic step in a Grofit run (GC + DR
+    # bootstrap). Sourced from growthqa.config.RANDOM_STATE so the whole
+    # project shares one value. Recorded in run_info.json via the
+    # grofit_config __dict__ splat, so any exported run can be reproduced.
+    random_state: int          = _RANDOM_STATE
+
+

@@ -293,7 +293,7 @@ if run:
                                 dr_s=grofit_opts.dr_s,
                                 fit_opt=grofit_opts.fit_opt,
                                 bootstrap_method=normalize_bootstrap_method(grofit_opts.bootstrap_method),
-                                validity_col="_fit_eligible", random_state=42, export_dir=Path(td),
+                                validity_col="_fit_eligible", random_state=grofit_opts.random_state, export_dir=Path(td),
                             )
 
                             gc_fit  = res.get("gc_fit",  pd.DataFrame())
@@ -338,7 +338,7 @@ if run:
                                 dr_s=eff_auto.dr_s,
                                 fit_opt=eff_auto.fit_opt,
                                 bootstrap_method=eff_auto.bootstrap_method,
-                                validity_col="_fit_eligible", random_state=42, export_dir=Path(td),
+                                validity_col="_fit_eligible", random_state=eff_auto.random_state, export_dir=Path(td),
                             )
                             gc_fit   = res.get("gc_fit",  pd.DataFrame())
                             dr_fit   = res.get("dr_fit",  pd.DataFrame())

@@ -181,10 +181,10 @@ def dr_fit_spline(
     y_raw = y_raw[mask]
 
 
-    if len(x) < 4:
+    if len(x) < 6:
         return {
             "success": False,
-            "message": "Need >=4 points for dose-response",
+            "message": "Insufficient points for dose-response. Need atleast 6",
             "fail_reason": "insufficient_points",
             "n": len(x),
         }
@@ -239,10 +239,10 @@ def dr_fit_spline(
         x = x_sum / np.maximum(cnt, 1.0)
         y_raw = y_raw_sum / np.maximum(cnt, 1.0)
 
-    if len(xt) < 5:
+    if len(xt) < 6:
         return {
             "success": False,
-            "message": "Need >=4 unique points for dose-response",
+            "message": "Insufficient points for dose-response.Need atleast 6",
             "fail_reason": "insufficient_unique_points",
             "n": len(xt),
         }
@@ -313,6 +313,10 @@ def dr_fit_spline(
                 "ec50_status": "OK",
                 
                 "y_ec50": model_fit.get("y_ec50", np.nan),
+                # 4PL fits raw y, so the fitted response at EC50 is already in
+                # original units. Reported explicitly so the pipeline never
+                # applies the y-transform inverse to this path.
+                "y_ec50_orig": model_fit.get("y_ec50", np.nan),
                 "endpoint_low": model_fit.get("bottom", np.nan),
                 "endpoint_high": model_fit.get("top", np.nan),
                 "aic": model_fit.get("aic", np.nan),

@@ -1,5 +1,6 @@
 # src/growthqa/grofit/pipeline.py
 from __future__ import annotations
+import hashlib
 import pandas as pd
 import numpy as np
 from typing import Optional, Dict, Any, Literal
@@ -181,7 +182,7 @@ DR_BOOT_COLS: list[str] = [
     "EC50.high",            # 95% CI upper
     "EC50.orig.low",
     "EC50.orig.high",
-    "EC50.crossing_rate",        # fraction of resamples that were genuine target crossings, not NO_CROSS_NEAREST boundary fallbacks
+    "EC50.ec50_crossing_rate",        # fraction of resamples that were genuine target crossings, not NO_CROSS_NEAREST boundary fallbacks
 ]
 
 # ── DR_AUDIT ──────────────────────────────────────────────────────────────────
@@ -232,6 +233,22 @@ def _ensure_columns(df: pd.DataFrame, cols: list[str]) -> None:
     missing = [c for c in cols if c not in df.columns]
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
+
+def _stable_curve_seed(random_state: int, key: object) -> int:
+    """Deterministic per-curve bootstrap seed.
+
+    Python's built-in hash() is randomised per interpreter process
+    (PYTHONHASHSEED), so `random_state + hash(curve_id)` silently produces a
+    different seed on every run. That defeats the explicit random_state the
+    caller passed in and makes every bootstrap CI non-reproducible. A SHA-256
+    digest of the curve key is stable across processes and machines, so a run
+    with the same random_state reproduces byte-identical bootstrap output.
+
+    Each curve still gets its own distinct seed, so curves remain independent
+    of one another and of their position in the upload.
+    """
+    digest = hashlib.sha256(str(key).encode("utf-8")).hexdigest()[:8]
+    return int(random_state) + (int(digest, 16) % 10_000)
 
 
 def _response_col_map(response_var: ResponseVar) -> dict[str, str]:
@@ -356,7 +373,7 @@ def run_grofit_pipeline(
                     ci=0.95,
                     random_state=(
                         None if random_state is None
-                        else random_state + int(hash(curve_id) % 10_000)
+                        else _stable_curve_seed(random_state, curve_id)
                     ),
                     spline_s=spline_s,
                     auto_cv=(spline_auto_cv and spline_s is None and smooth_gc is None),
@@ -717,17 +734,29 @@ def run_grofit_pipeline(
                     chosen, chosen_name = model_fit, "4pl"
                 else:
                     chosen, chosen_name = spline_fit, str(spline_fit.get("method", "spline"))
+        # Actual number of bootstrap resamples that produced a genuine EC50
+        # crossing. Filled from dr_boot_spline below when the bootstrap runs.
+        # Reporting the requested dr_boot_B here would overstate how many real
+        # estimates the CI rests on, exactly as nboot.fit once did on the GC side.
+        dr_samples_used = 0
 
         ec50   = chosen.get("ec50",   np.nan)
         y_ec50 = float(chosen.get("y_ec50")) if np.isfinite(chosen.get("y_ec50", np.nan)) else np.nan
-        # y_ec50_orig = (float(np.expm1(y_ec50)) if log_y == 1 and np.isfinite(y_ec50) else y_ec50)
-        _yt_norm = str(dr_y_transform or "").strip().lower()
-        if _yt_norm in {"log10", "log"} and np.isfinite(y_ec50):
-            y_ec50_orig = float(10.0 ** y_ec50)
-        elif _yt_norm in {"log1p", "ln1p"} and np.isfinite(y_ec50):
-            y_ec50_orig = float(np.expm1(y_ec50))
-        else:
-            y_ec50_orig = y_ec50
+
+        # Delegate the back-transform to the fit itself, exactly as EC50 /
+        # EC50.orig already do. Each fit knows which space it worked in: the
+        # spline fits transformed y and inverts it; the 4PL/Hill path fits raw
+        # y by design and returns it unchanged. Re-deriving the inverse here
+        # from dr_y_transform alone applied it a second time to 4PL rows.
+        _y_ec50_orig = chosen.get("y_ec50_orig", np.nan)
+        y_ec50_orig = (
+            float(_y_ec50_orig) if np.isfinite(_y_ec50_orig) else y_ec50
+        )
+
+        # The 4PL/Hill path ignores dr_y_transform by design, so reporting
+        # log.y = 1 on those rows would misstate what was actually fitted.
+        _fit_used_raw_y = str(chosen.get("method", "")).strip().lower() in {"4pl", "4pl_fallback"}
+        log_y_row = 0 if _fit_used_raw_y else log_y
 
         # aic_s = spline_fit.get("aic", np.nan)
         # aic_m = model_fit.get("aic",  np.nan)
@@ -756,8 +785,8 @@ def run_grofit_pipeline(
         dr_rows.append({
             "name":           test_id,
             "log.x":          log_x,
-            "log.y":          log_y,
-            "Samples":        int(dr_boot_B) if dr_boot_B > 0 else 0,
+            "log.y":          log_y_row,
+            "Samples":        dr_samples_used,
             "n.conc":         n_conc,
             "EC50":           chosen.get("ec50_x_transformed", ec50),
             "meanEC50":       np.nan,      # filled from dr_boot below
@@ -811,13 +840,16 @@ def run_grofit_pipeline(
                 ci=0.95,
                 random_state=(
                     None if random_state is None
-                    else random_state + int(hash(test_id) % 10_000)
+                    else _stable_curve_seed(random_state, test_id)
                 ),
                 x_transform=dr_x_transform,
                 lam=dr_s,
             )
 
             _dr_audit_row["ec50_crossing_rate"] = dr_boot_result.get("ec50_crossing_rate", np.nan)
+            # if dr_boot_result.get("success"):
+
+            dr_samples_used = int(dr_boot_result.get("ec50_samples_n", 0) or 0)
 
             if dr_boot_result.get("success"):
                 ec50_orig_lo = dr_boot_result.get("ec50_lo", np.nan)
@@ -840,13 +872,14 @@ def run_grofit_pipeline(
 
                 dr_boot_rows.append({
                     "name":           test_id,
+                    "Samples":        dr_samples_used,
                     "meanEC50":       dr_boot_result.get("ec50_mean", np.nan),
                     "sdEC50":         dr_boot_result.get("ec50_sd",   np.nan),
                     "EC50.low":       _fwd(ec50_orig_lo),   # transformed-space lower CI
                     "EC50.high":      _fwd(ec50_orig_hi),   # transformed-space upper CI
                     "EC50.orig.low":  ec50_orig_lo,          # original units lower CI
                     "EC50.orig.high": ec50_orig_hi,          # original units upper CI
-                    "EC50.crossing_rate": dr_boot_result.get("crossing_rate", np.nan),
+                    "EC50.crossing_rate": dr_boot_result.get("ec50_crossing_rate", np.nan),
                 })
 
     # ── Build DR DataFrames ──────────────────────────────────────────────────

@@ -445,7 +445,14 @@ def _assign_stage2_checker_outputs(
         low_confidence = False
         if unsure_conf_threshold is not None and np.isfinite(s1_conf_valid):
             margin = min(float(s1_conf_valid), 1.0 - float(s1_conf_valid))
-            low_confidence = margin > float(unsure_conf_threshold)
+            # Tolerance, not cosmetics: 1.0 - 0.70 is 0.30000000000000004 in
+            # IEEE-754, so a curve sitting exactly on the valid threshold would
+            # be pushed to Unsure while its mirror image at 0.30 is correctly
+            # called Invalid. thresholds.json declares 0.70/0.30 as inclusive
+            # bounds; this keeps both ends of the band inclusive.
+            low_confidence = margin > float(unsure_conf_threshold) + 1e-9
+
+
 
         if low_confidence:
             label_for_reason = s1 if s1 else "Unknown"
