@@ -1,0 +1,17 @@
+feature,n_folds_selected
+largest_drop_frac,7
+max_gap_hours,5
+multi_phase_flag,5
+final_OD,4
+max_slope,4
+net_change_per_hour,3
+monotonicity_fraction,3
+auc_per_hour,2
+lag_time_est,2
+growth_phase_duration,2
+noise_residual_std,2
+observed_tmax,1
+n_points_observed,1
+missing_frac_on_grid,1
+roughness,1
+initial_OD,0
